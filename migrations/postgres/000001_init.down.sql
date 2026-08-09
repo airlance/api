@@ -1,1 +1,4 @@
-DROP TABLE IF EXISTS schema_bootstrap;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS user_devices;
+DROP TABLE IF EXISTS auth_identities;
+DROP TABLE IF EXISTS users;

@@ -1,0 +1,25 @@
+// Airlance AuthService wire schema — flatbuffers
+//
+// This is the payload format carried inside each gRPC message body, on
+// top of the wire auth grpc secured channel (RSA/ECDH handshake + AES-GCM
+// already gives transport confidentiality/integrity. The xxhash64 checksum added by
+// flatcodec.Codec is NOT for security; it's a cheap corruption/framing
+// sanity check plus a fast dedup/log-correlation key, checked before we
+// even touch the flatbuffers buffer. See flatcodec/codec.go.
+//
+// Regenerate with:
+//   flatc --go --go-namespace authv1 -o internal/genfb fbs/auth/*.fbs
+
+namespace authv1;
+
+enum Platform : byte { Unknown = 0, Web = 1, IOS = 2, Android = 3, MacOS = 4 }
+
+// Sent on every call that doesn't yet have a session (LoginByGithub,
+// ConfirmQRLogin the first time, GenerateQRLogin). Server derives
+// IPAddress from the peer connection, not from this table.
+table ClientContext {
+  platform:Platform;
+  os:string;
+  device_name:string;
+  user_agent:string;
+}

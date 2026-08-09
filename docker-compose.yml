@@ -46,6 +46,18 @@ services:
     networks:
       - airlance
 
+  redis:
+    image: redis:8-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - airlance
+
   adminer:
     image: adminer
     container_name: adminer
@@ -56,6 +68,7 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  redis_data:
   postgres_data:
 
 networks:

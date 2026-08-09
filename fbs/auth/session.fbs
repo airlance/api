@@ -1,0 +1,72 @@
+// Session lifecycle — resume, logout (TerminateSession), listing a
+// user's own active sessions, and killing one of them remotely.
+// See common.fbs for the shared wire-schema header comment.
+//
+// Regenerate with:
+//   flatc --go --go-namespace authv1 -o internal/genfb fbs/auth/*.fbs
+
+include "common.fbs";
+
+namespace authv1;
+
+// ---- ResumeSession -----------------------------------------------------
+
+table ResumeSessionRequest {
+  auth_key_id:uint64;
+  resume_secret:string;
+}
+
+table ResumeSessionResponse {
+  auth_key_id:uint64;
+  user_id:int32;
+}
+
+// ---- TerminateSession ---------------------------------------------------
+// Logs out the CALLING session (the one identified by the auth-key-id
+// on the request metadata) — same as "log out this device". To end a
+// *different* session of the same user, use KillSession instead.
+
+table TerminateSessionRequest {
+  reason:string; // "logout" | "security" — validated server-side
+}
+
+table TerminateSessionResponse {
+  ok:bool;
+}
+
+// ---- ListSessions ---------------------------------------------------------
+// Lists every active session belonging to the calling user, e.g. for a
+// "devices logged in" settings screen.
+
+table ListSessionsRequest {}
+
+table SessionInfo {
+  auth_key_id:uint64;
+  is_current:bool; // true for the session making this call
+  platform:Platform;
+  os:string;
+  device_name:string;
+  ip_address:string;
+  created_at_ms:int64;
+  last_active_at_ms:int64;
+}
+
+table ListSessionsResponse {
+  sessions:[SessionInfo];
+}
+
+// ---- KillSession ----------------------------------------------------------
+// Remotely revokes one of the calling user's OTHER sessions by
+// auth_key_id, e.g. "log out this device" from a device list. The
+// server verifies the target session belongs to the caller's user_id
+// before revoking it — killing another user's session is always
+// rejected (NotFound), never a permission error, to avoid confirming
+// whether a given auth_key_id exists.
+
+table KillSessionRequest {
+  auth_key_id:uint64;
+}
+
+table KillSessionResponse {
+  ok:bool;
+}

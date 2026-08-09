@@ -1,0 +1,71 @@
+// QR login — see common.fbs for the shared wire-schema header comment.
+//
+// Regenerate with:
+//   flatc --go --go-namespace authv1 -o internal/genfb fbs/auth/*.fbs
+
+include "common.fbs";
+
+namespace authv1;
+
+table GenerateQRLoginRequest {
+  client_ctx:ClientContext; // the waiter device (desktop/web showing the code)
+}
+
+table GenerateQRLoginResponse {
+  token:string;
+  expires_at_ms:int64;
+}
+
+table ScanQRLoginRequest {
+  token:string;
+}
+
+enum QRLoginFailReason : byte { Unknown = 0, TokenExpired = 1, AlreadyUsed = 2, NotFound = 3 }
+
+table ScanQRLoginResponse {
+  ok:bool;
+  fail_reason:QRLoginFailReason;
+  waiter_device_name:string;
+  waiter_platform:Platform;
+  waiter_os:string;
+}
+
+table ConfirmQRLoginRequest {
+  token:string;
+}
+
+table ConfirmQRLoginResponse {
+  ok:bool;
+  fail_reason:QRLoginFailReason;
+}
+
+table RejectQRLoginRequest {
+  token:string;
+}
+
+table RejectQRLoginResponse {
+  ok:bool;
+}
+
+// ---- WaitQRLoginResult (server-streaming, called by the waiter) --------
+// One event per stream message; stream closes after Confirmed or
+// ExpiredOrRejected.
+union QRLoginEventPayload { QRLoginConfirmed, QRLoginExpiredOrRejected }
+
+table QRLoginConfirmed {
+  auth_key_id:uint64;
+  resume_secret:string;
+  user_id:int32;
+}
+
+table QRLoginExpiredOrRejected {
+  reason:QRLoginFailReason;
+}
+
+table WaitQRLoginResultRequest {
+  token:string;
+}
+
+table QRLoginEvent {
+  payload:QRLoginEventPayload;
+}

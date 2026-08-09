@@ -11,8 +11,10 @@ type Config struct {
 	App      App
 	Log      Log
 	Database Database
+	Redis    Redis
 	Grpc     Grpc
 	Http     Http
+	Auth     Auth
 }
 
 type App struct {
@@ -20,9 +22,7 @@ type App struct {
 }
 
 type Grpc struct {
-	Port string `envconfig:"GRPC_PORT" default:"9090"`
-	// TLSKeyPath is the path to the server's RSA private key (PEM),
-	// used by wireauthgrpc instead of a standard TLS certificate.
+	Port       string `envconfig:"GRPC_PORT" default:"9090"`
 	TLSKeyPath string `envconfig:"GRPC_TLS_KEY_PATH" required:"true"`
 }
 
@@ -32,6 +32,18 @@ type Http struct {
 
 type Database struct {
 	DSN string `envconfig:"DB_DSN" required:"true"`
+}
+
+type Redis struct {
+	Addr string `envconfig:"REDIS_ADDR" required:"true"`
+}
+
+type Auth struct {
+	ServerInstanceID   string `envconfig:"SERVER_INSTANCE_ID" required:"true"`
+	GithubClientID     string `envconfig:"GITHUB_CLIENT_ID" required:"true"`
+	GithubClientSecret string `envconfig:"GITHUB_CLIENT_SECRET" required:"true"`
+	GithubRedirectURI  string `envconfig:"GITHUB_REDIRECT_URI" required:"true"`
+	AppCallbackURL     string `envconfig:"APP_CALLBACK_URL" required:"true"`
 }
 
 type Log struct {

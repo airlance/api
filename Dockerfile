@@ -2,8 +2,7 @@ FROM golang:1.26-alpine
 
 RUN apk add --no-cache \
     git \
-    build-base \
-    flatbuffers
+    build-base
 
 RUN go install github.com/githubnemo/CompileDaemon@latest
 

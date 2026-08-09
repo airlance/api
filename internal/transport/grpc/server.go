@@ -9,8 +9,9 @@ import (
 	"github.com/airlance/api/internal/config"
 	"github.com/airlance/api/internal/infrastructure/contextx"
 	"github.com/airlance/api/internal/infrastructure/logger"
-	"github.com/airlance/api/internal/infrastructure/wireauthgrpc"
+	grpcinterceptor "github.com/airlance/api/internal/transport/grpc/interceptor"
 	"github.com/google/uuid"
+	wire "github.com/resoul/wireauth-grpc"
 	"google.golang.org/grpc"
 )
 
@@ -23,17 +24,23 @@ type Server struct {
 // NewServer builds the gRPC server. Register your service implementations
 // on the returned *grpc.Server (via Server.Register or Raw) before
 // calling Start.
-func NewServer(cfg *config.Config) (*Server, error) {
+func NewServer(cfg *config.Config, sessionValidator grpcinterceptor.SessionValidator) (*Server, error) {
 	privateKey, err := loadRSAPrivateKey(cfg.Grpc.TLSKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load gRPC server key: %w", err)
 	}
 
-	creds := wireauthgrpc.NewServerCredentials(privateKey)
+	creds := wire.NewServerCredentials(privateKey)
 
 	s := grpc.NewServer(
 		grpc.Creds(creds),
-		grpc.UnaryInterceptor(loggingUnaryInterceptor),
+		grpc.ChainUnaryInterceptor(
+			loggingUnaryInterceptor,
+			grpcinterceptor.UnaryAuth(sessionValidator),
+		),
+		grpc.ChainStreamInterceptor(
+			grpcinterceptor.StreamAuth(sessionValidator),
+		),
 	)
 
 	return &Server{

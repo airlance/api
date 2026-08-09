@@ -19,8 +19,12 @@ type Server struct {
 // NewServer builds the HTTP server with routing and middleware. Additional
 // route groups (usecases) can be mounted onto the returned chi router
 // before Start is called, by extending newRouter.
-func NewServer(addr string) *Server {
-	router := newRouter()
+//
+// appCallbackURL is the custom-scheme URL the GitHub OAuth callback
+// redirects to (see github_callback.go) — GitHub can only redirect to an
+// https:// URL, so this HTTP server is the bridge back to the native app.
+func NewServer(addr string, appCallbackURL string) *Server {
+	router := newRouter(appCallbackURL)
 
 	return &Server{
 		httpServer: &http.Server{
@@ -31,7 +35,7 @@ func NewServer(addr string) *Server {
 	}
 }
 
-func newRouter() http.Handler {
+func newRouter(appCallbackURL string) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -39,6 +43,7 @@ func newRouter() http.Handler {
 	r.Use(middleware.Recoverer)
 
 	r.Get("/health", healthHandler)
+	r.Get("/auth/github/callback", newGithubCallbackHandler(appCallbackURL).ServeHTTP)
 
 	return r
 }

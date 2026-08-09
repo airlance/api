@@ -1,0 +1,22 @@
+// LoginByGithub — see common.fbs for the shared wire-schema header comment.
+//
+// Regenerate with:
+//   flatc --go --go-namespace authv1 -o internal/genfb fbs/auth/*.fbs
+
+include "common.fbs";
+
+namespace authv1;
+
+// code: the OAuth "code" param GitHub redirected back with; server does
+// the code->token exchange itself (see infrastructure/githuboauth), the
+// client never sees a GitHub access token.
+table LoginByGithubRequest {
+  code:string;
+  client_ctx:ClientContext;
+}
+
+table LoginByGithubResponse {
+  auth_key_id:uint64;
+  user_id:int32;
+  resume_secret:string;
+}

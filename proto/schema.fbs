@@ -1,0 +1,120 @@
+namespace Protocol;
+
+//   1: Ping                — (heartbeat)
+//   2: Pong                — (heartbeat)
+//   3: NewSession          — (session)
+//   4: ResumeSession       — (session)
+//   5: RegisterAccount     — (registration)
+//   6: RegisterAccountAck  — (registration)
+//   7: ConfirmEmailCode    — (registration)
+//   8: ConfirmEmailCodeAck — (registration)
+//   9: Error               — (general error)
+//  10: NewSessionAck       — (session)
+//  11: ResumeSessionAck    — (session)
+//  12: SendMessage         — (messaging)
+//  13: SendMessageAck      — (messaging)
+//  14: MessageUpdate       — (messaging)
+
+union Body {
+  Ping,
+  Pong,
+  NewSession,
+  ResumeSession,
+  RegisterAccount,
+  RegisterAccountAck,
+  ConfirmEmailCode,
+  ConfirmEmailCodeAck,
+  Error,
+  NewSessionAck,
+  ResumeSessionAck,
+  SendMessage,
+  SendMessageAck,
+  MessageUpdate,
+}
+
+table Ping {
+  timestamp: int64;
+}
+
+table Pong {
+  timestamp: int64;
+}
+
+table NewSession {
+  device_id: uint64;
+}
+
+table ResumeSession {
+  session_id: string;
+}
+
+table NewSessionAck {
+  session_id: string;
+}
+
+table ResumeSessionAck {
+  session_id: string;
+}
+
+table RegisterAccount {
+  email: string;
+  first_name: string;
+  last_name: string;
+}
+
+table RegisterAccountAck {
+  account_id: uint64;
+}
+
+table ConfirmEmailCode {
+  account_id: uint64;
+  code: string;
+}
+
+table ConfirmEmailCodeAck {
+  session_id: string;
+  device_id: uint64;
+}
+
+enum ErrorCode : byte {
+  UNKNOWN = 0,
+  EMAIL_ALREADY_EXISTS = 1,
+  INVALID_CODE = 2,
+  TOO_MANY_ATTEMPTS = 3,
+  EXPIRED_CODE = 4,
+  RATE_LIMIT_EXCEEDED = 5,
+  SESSION_NOT_FOUND = 6,
+  DEVICE_NOT_FOUND = 7,
+  INVALID_RECIPIENT = 8,
+}
+
+table Error {
+  code: ErrorCode;
+  message: string;
+}
+
+table SendMessage {
+  recipient_account_id: uint64;
+  client_msg_id: string;
+  text: string;
+}
+
+table SendMessageAck {
+  client_msg_id: string;
+  server_msg_id: string;
+  created_at: int64;
+}
+
+table MessageUpdate {
+  server_msg_id: string;
+  sender_account_id: uint64;
+  text: string;
+  created_at: int64;
+}
+
+table Envelope {
+  request_id: uint64;
+  body: Body;
+}
+
+root_type Envelope;

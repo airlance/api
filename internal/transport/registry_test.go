@@ -2,14 +2,33 @@ package transport
 
 import (
 	"testing"
+	"time"
+
+	"github.com/airlance/api/internal/domain/account"
 )
+
+type mockNoiseConn struct {
+	written [][]byte
+}
+
+func (m *mockNoiseConn) ReadFrame() ([]byte, error) { return nil, nil }
+func (m *mockNoiseConn) WriteFrame(data []byte) error {
+	m.written = append(m.written, data)
+	return nil
+}
+func (m *mockNoiseConn) SetReadDeadline(t time.Time) error { return nil }
+func (m *mockNoiseConn) RemoteStaticKey() []byte           { return []byte("pubkey") }
+func (m *mockNoiseConn) Close() error                      { return nil }
 
 func TestConnectionRegistry_RegisterAndGet(t *testing.T) {
 	reg := NewConnectionRegistry()
 
-	active := reg.Register(nil)
+	active := reg.Register(nil, account.AccountID(42))
 	if active.ID == "" {
 		t.Fatal("expected non-empty connection ID")
+	}
+	if active.AccountID != 42 {
+		t.Fatalf("expected AccountID 42, got %d", active.AccountID)
 	}
 
 	got, ok := reg.Get(active.ID)
@@ -30,5 +49,33 @@ func TestConnectionRegistry_RegisterAndGet(t *testing.T) {
 	}
 	if reg.Count() != 0 {
 		t.Fatalf("count = %d, want 0", reg.Count())
+	}
+}
+
+func TestConnectionRegistry_PushToAccount(t *testing.T) {
+	reg := NewConnectionRegistry()
+	mockConn := &mockNoiseConn{}
+
+	ac := reg.Register(mockConn, account.AccountID(100))
+	frame := []byte("hello")
+
+	sent := reg.PushToAccount(account.AccountID(100), frame)
+	if !sent {
+		t.Fatal("expected PushToAccount to return true")
+	}
+	if len(mockConn.written) != 1 {
+		t.Fatalf("expected 1 frame written, got %d", len(mockConn.written))
+	}
+
+	// Push to non-existent account
+	sentNotFound := reg.PushToAccount(account.AccountID(999), frame)
+	if sentNotFound {
+		t.Fatal("expected PushToAccount for non-existent account to return false")
+	}
+
+	reg.Unregister(ac.ID)
+	sentAfterUnregister := reg.PushToAccount(account.AccountID(100), frame)
+	if sentAfterUnregister {
+		t.Fatal("expected PushToAccount after unregister to return false")
 	}
 }

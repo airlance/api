@@ -62,6 +62,8 @@ func TestUnionBodyIndicesAreStable(t *testing.T) {
 		{"SendMessage", gen.BodySendMessage, 12},
 		{"SendMessageAck", gen.BodySendMessageAck, 13},
 		{"MessageUpdate", gen.BodyMessageUpdate, 14},
+		{"GetDifference", gen.BodyGetDifference, 15},
+		{"DifferenceAck", gen.BodyDifferenceAck, 16},
 	}
 	for _, c := range cases {
 		if c.got != c.want {

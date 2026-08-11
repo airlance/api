@@ -64,6 +64,21 @@ func TestUnionBodyIndicesAreStable(t *testing.T) {
 		{"MessageUpdate", gen.BodyMessageUpdate, 14},
 		{"GetDifference", gen.BodyGetDifference, 15},
 		{"DifferenceAck", gen.BodyDifferenceAck, 16},
+		{"CreateQRTicket", gen.BodyCreateQRTicket, 17},
+		{"CreateQRTicketAck", gen.BodyCreateQRTicketAck, 18},
+		{"QRTicketStatusUpdate", gen.BodyQRTicketStatusUpdate, 19},
+		{"ScanQRTicket", gen.BodyScanQRTicket, 20},
+		{"ConfirmQRTicket", gen.BodyConfirmQRTicket, 21},
+		{"DenyQRTicket", gen.BodyDenyQRTicket, 22},
+		{"QRLoginAck", gen.BodyQRLoginAck, 23},
+		{"Logout", gen.BodyLogout, 24},
+		{"LogoutAck", gen.BodyLogoutAck, 25},
+		{"ListSessions", gen.BodyListSessions, 26},
+		{"ListSessionsAck", gen.BodyListSessionsAck, 27},
+		{"LogoutAllSessions", gen.BodyLogoutAllSessions, 28},
+		{"LogoutAllSessionsAck", gen.BodyLogoutAllSessionsAck, 29},
+		{"SetSessionTTL", gen.BodySetSessionTTL, 30},
+		{"SetSessionTTLAck", gen.BodySetSessionTTLAck, 31},
 	}
 	for _, c := range cases {
 		if c.got != c.want {

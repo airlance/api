@@ -18,4 +18,10 @@ type Session struct {
 	AccountID    account.AccountID
 	ConnectionID string
 	CreatedAt    time.Time
+	LastActiveAt time.Time
+	RevokedAt    *time.Time
+}
+
+func (s Session) IsActive() bool {
+	return s.RevokedAt == nil
 }

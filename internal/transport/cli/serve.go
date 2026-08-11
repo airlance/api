@@ -3,21 +3,29 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/airlance/api/internal/config"
 	"github.com/airlance/api/internal/domain/account"
 	"github.com/airlance/api/internal/domain/device"
+	"github.com/airlance/api/internal/domain/qrlogin"
 	"github.com/airlance/api/internal/domain/session"
 	"github.com/airlance/api/internal/domain/updatelog"
+	emailinfra "github.com/airlance/api/internal/infrastructure/email"
 	"github.com/airlance/api/internal/infrastructure/logger"
-	"github.com/airlance/api/internal/infrastructure/memory"
+	"github.com/airlance/api/internal/infrastructure/nodeid"
+	oauthinfra "github.com/airlance/api/internal/infrastructure/oauth"
 	"github.com/airlance/api/internal/infrastructure/postgres"
+	redisinfra "github.com/airlance/api/internal/infrastructure/redis"
+	"github.com/airlance/api/internal/infrastructure/redisclient"
 	"github.com/airlance/api/internal/infrastructure/serverkey"
+	"github.com/airlance/api/internal/infrastructure/sessioncleanup"
 	"github.com/airlance/api/internal/noiseik"
 	gen "github.com/airlance/api/internal/protocol/generated/Protocol"
 	"github.com/airlance/api/internal/transport"
+	httpinfra "github.com/airlance/api/internal/transport/http"
 	"github.com/airlance/api/internal/usecase"
 	flatbuffers "github.com/google/flatbuffers/go"
 	_ "github.com/lib/pq"
@@ -36,6 +44,8 @@ var serveCmd = &cobra.Command{
 	Aliases: []string{"server"},
 	Short:   "Start TCP + Noise IK messenger server",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("server: failed to load config: %w", err)
@@ -55,6 +65,12 @@ var serveCmd = &cobra.Command{
 			cfg.Server.HeartbeatTimeout = serveHeartbeatTimeout
 		}
 
+		nodeID, err := nodeid.Load(cfg.NodeID.Path)
+		if err != nil {
+			return fmt.Errorf("server: failed to load node_id: %w", err)
+		}
+		logger.Log.WithField("node_id", nodeID).Info("initialized node identity")
+
 		kp, err := serverkey.LoadServerKeyPair(cfg.Server.KeyPath)
 		if err != nil {
 			return fmt.Errorf("server: failed to load server key from %s: %w", cfg.Server.KeyPath, err)
@@ -69,23 +85,79 @@ var serveCmd = &cobra.Command{
 			return fmt.Errorf("server: open db failed: %w", err)
 		}
 		defer db.Close()
-		if err := db.PingContext(cmd.Context()); err != nil {
+		if err := db.PingContext(ctx); err != nil {
 			return fmt.Errorf("server: ping db failed: %w", err)
+		}
+
+		var redisClient *redisclient.Client
+		if cfg.Redis.Addr != "" {
+			var err error
+			redisClient, err = redisclient.New(cfg.Redis)
+			if err != nil {
+				logger.Log.WithField("error", err).Warn("failed to connect to redis, proceeding with limited functionality")
+			} else {
+				defer redisClient.Close()
+				logger.Log.WithField("addr", cfg.Redis.Addr).Info("connected to redis")
+			}
 		}
 
 		uow := postgres.NewUnitOfWork(db)
 		updateRepo := postgres.NewUpdateLogRepository(db)
 
+		accountRepo := postgres.NewAccountRepository(db)
+		authIdentityRepo := postgres.NewAuthIdentityRepository(db)
+		deviceRepo := postgres.NewDeviceRepository(db)
+		sessionRepo := postgres.NewSessionRepository(db)
+		codeRepo := postgres.NewConfirmationCodeRepository(db)
+
+		smtpClient := emailinfra.NewSMTPClient(cfg.SMTP)
+		newDeviceNotifier := emailinfra.NewSMTPNewDeviceNotifier(smtpClient)
+		logEmailSender := emailinfra.NewLogEmailSender()
+
+		var qrloginRepo qrlogin.Repository
+		var qrloginPubSub qrlogin.EventPublisher
+		if redisClient != nil {
+			qrloginRepo = redisinfra.NewQRLoginRepository(redisClient)
+			qrloginPubSub = redisinfra.NewEventPublisher(redisClient)
+		}
+
+		githubClient := oauthinfra.NewGithubClient(cfg.Github)
+
+		emailAuthUC := usecase.NewEmailAuthUseCase(accountRepo, authIdentityRepo, deviceRepo, sessionRepo, codeRepo, logEmailSender, newDeviceNotifier)
+		githubAuthUC := usecase.NewGithubAuthUseCase(accountRepo, authIdentityRepo, deviceRepo, sessionRepo, githubClient, newDeviceNotifier)
+		qrLoginUC := usecase.NewQRLoginUseCase(qrloginRepo, deviceRepo, sessionRepo, accountRepo, qrloginPubSub, newDeviceNotifier)
+		sessionMgmtUC := usecase.NewSessionManagementUseCase(sessionRepo, accountRepo)
+
+		sessionUC := usecase.NewSessionUseCase(sessionRepo, deviceRepo)
+		heartbeatUC := usecase.NewHeartbeatUseCase(deviceRepo, sessionRepo)
+		messageUC := usecase.NewMessageUseCase(uow, updateRepo, transport.NewConnectionRegistry()) // placeholder registry
+
 		registry := transport.NewConnectionRegistry()
+		messageUC = usecase.NewMessageUseCase(uow, updateRepo, registry)
+
 		router := transport.NewMessageRouter()
 		defer router.Close()
 
-		sessionRepo := memory.NewSessionRepository()
-		sessionUC := usecase.NewSessionUseCase(sessionRepo, nil)
-		heartbeatUC := usecase.NewHeartbeatUseCase(nil)
-		messageUC := usecase.NewMessageUseCase(uow, updateRepo, registry)
+		httpServer := httpinfra.NewServer(cfg, githubAuthUC)
+		go func() {
+			logger.Log.WithField("addr", cfg.HTTP.Addr).Info("starting HTTP OAuth server")
+			if err := httpServer.Start(); err != nil {
+				logger.Log.WithField("error", err).Error("HTTP OAuth server stopped unexpectedly")
+			}
+		}()
 
-		l := transport.NewListener(cfg.Server.Addr, newHandler(kp, registry, router, sessionUC, heartbeatUC, messageUC, updateRepo, cfg.Server.HeartbeatTimeout))
+		cleanupWorker := sessioncleanup.NewWorker(sessionRepo, 1*time.Hour)
+		go cleanupWorker.Run(ctx)
+
+		if redisClient != nil {
+			startQRSubSubscriber(ctx, redisClient, nodeID, registry, qrLoginUC, updateRepo)
+		}
+
+		l := transport.NewListener(cfg.Server.Addr, newHandler(
+			kp, nodeID, registry, router, accountRepo,
+			emailAuthUC, githubAuthUC, qrLoginUC, sessionMgmtUC,
+			sessionUC, heartbeatUC, messageUC, updateRepo, cfg.Server.HeartbeatTimeout,
+		))
 		logger.Log.WithFields(logrus.Fields{
 			"addr":              cfg.Server.Addr,
 			"heartbeat_timeout": cfg.Server.HeartbeatTimeout,
@@ -101,10 +173,75 @@ func init() {
 	serveCmd.Flags().DurationVar(&serveHeartbeatTimeout, "heartbeat-timeout", 60*time.Second, "read deadline timeout for idle client connections (e.g. 60s)")
 }
 
+func startQRSubSubscriber(ctx context.Context, rdb *redisclient.Client, nodeID string, registry *transport.ConnectionRegistry, qrLoginUC *usecase.QRLoginUseCase, updateRepo updatelog.Repository) {
+	pubsub := rdb.Subscribe(ctx, redisinfra.EventChannel(nodeID))
+	ch := pubsub.Channel()
+
+	go func() {
+		defer pubsub.Close()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				var ev qrlogin.Event
+				if err := json.Unmarshal([]byte(msg.Payload), &ev); err != nil {
+					continue
+				}
+
+				activeConn, ok := registry.GetPendingQR(ev.TicketID)
+				if !ok || activeConn.Conn == nil {
+					continue
+				}
+
+				noiseConn, ok := activeConn.Conn.(*noiseik.Conn)
+				if !ok {
+					continue
+				}
+
+				switch ev.Type {
+				case qrlogin.EventScanned:
+					_ = writeQRTicketStatusUpdate(noiseConn, 0, string(ev.TicketID), gen.QRTicketStatusSCANNED)
+				case qrlogin.EventDenied:
+					_ = writeQRTicketStatusUpdate(noiseConn, 0, string(ev.TicketID), gen.QRTicketStatusDENIED)
+					registry.UnregisterPendingQR(ev.TicketID)
+				case qrlogin.EventConfirmed:
+					sess, err := qrLoginUC.Complete(ctx, ev.TicketID, usecase.DeviceInfo{})
+					if err != nil {
+						_ = writeQRTicketStatusUpdate(noiseConn, 0, string(ev.TicketID), gen.QRTicketStatusEXPIRED)
+						registry.UnregisterPendingQR(ev.TicketID)
+						continue
+					}
+
+					var curSeq updatelog.Seq
+					if updateRepo != nil {
+						curSeq, _ = updateRepo.CurrentSeq(ctx, sess.AccountID)
+					}
+
+					_ = writeQRLoginAck(noiseConn, 0, string(sess.ID), uint64(sess.DeviceID), uint64(sess.AccountID), int64(curSeq))
+
+					activeConn.AccountID = sess.AccountID
+					registry.Register(activeConn.Conn, sess.AccountID)
+					registry.UnregisterPendingQR(ev.TicketID)
+				}
+			}
+		}
+	}()
+}
+
 func newHandler(
 	kp *serverkey.ServerKeyPair,
+	nodeID string,
 	registry *transport.ConnectionRegistry,
 	router *transport.MessageRouter,
+	accountRepo account.Repository,
+	emailAuthUC *usecase.EmailAuthUseCase,
+	githubAuthUC *usecase.GithubAuthUseCase,
+	qrLoginUC *usecase.QRLoginUseCase,
+	sessionMgmtUC *usecase.SessionManagementUseCase,
 	sessionUC *usecase.SessionUseCase,
 	heartbeatUC *usecase.HeartbeatUseCase,
 	messageUC *usecase.MessageUseCase,
@@ -126,6 +263,7 @@ func newHandler(
 
 		var (
 			currentAccountID account.AccountID
+			currentSessionID session.SessionID
 			activeConn       *transport.ActiveConn
 		)
 
@@ -166,9 +304,8 @@ func newHandler(
 				}
 				ping := new(gen.Ping)
 				ping.Init(unionTable.Bytes, unionTable.Pos)
-				logger.FromContext(reqCtx).WithField("timestamp", ping.Timestamp()).Debug("received Ping")
 
-				_ = heartbeatUC.HandlePing(reqCtx, device.DeviceID(0))
+				_ = heartbeatUC.HandlePing(reqCtx, currentSessionID, device.DeviceID(0))
 
 				if err := writePong(conn, env.RequestId(), ping.Timestamp()); err != nil {
 					logger.FromContext(reqCtx).WithField("error", err).Warn("failed to write Pong")
@@ -184,6 +321,7 @@ func newHandler(
 					return
 				}
 				currentAccountID = sess.AccountID
+				currentSessionID = sess.ID
 				if activeConn != nil {
 					registry.Unregister(activeConn.ID)
 				}
@@ -217,6 +355,7 @@ func newHandler(
 					return
 				}
 				currentAccountID = sess.AccountID
+				currentSessionID = sess.ID
 				if activeConn != nil {
 					registry.Unregister(activeConn.ID)
 				}
@@ -231,6 +370,228 @@ func newHandler(
 					return
 				}
 
+			case gen.BodyRegisterAccount:
+				unionTable := new(flatbuffers.Table)
+				if !env.Body(unionTable) {
+					logger.FromContext(reqCtx).Warn("sent malformed RegisterAccount frame")
+					return
+				}
+				regReq := new(gen.RegisterAccount)
+				regReq.Init(unionTable.Bytes, unionTable.Pos)
+
+				err := emailAuthUC.RequestCode(reqCtx, usecase.RequestCodeRequest{
+					Email:     string(regReq.Email()),
+					FirstName: string(regReq.FirstName()),
+					LastName:  string(regReq.LastName()),
+				})
+				if err != nil {
+					logger.FromContext(reqCtx).WithField("error", err).Warn("RegisterAccount failed")
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeUNKNOWN, err.Error())
+					return
+				}
+
+				var accID uint64
+				if acc, err := accountRepo.FindByEmail(reqCtx, string(regReq.Email())); err == nil {
+					accID = uint64(acc.ID)
+				}
+
+				if err := writeRegisterAccountAck(conn, env.RequestId(), accID); err != nil {
+					return
+				}
+
+			case gen.BodyConfirmEmailCode:
+				unionTable := new(flatbuffers.Table)
+				if !env.Body(unionTable) {
+					logger.FromContext(reqCtx).Warn("sent malformed ConfirmEmailCode frame")
+					return
+				}
+				cecReq := new(gen.ConfirmEmailCode)
+				cecReq.Init(unionTable.Bytes, unionTable.Pos)
+
+				sess, err := emailAuthUC.ConfirmCode(reqCtx, usecase.ConfirmCodeRequest{
+					AccountID: account.AccountID(cecReq.AccountId()),
+					Code:      string(cecReq.Code()),
+					Device: usecase.DeviceInfo{
+						PublicKey:   conn.RemoteStaticKey(),
+						Fingerprint: string(cecReq.DeviceFingerprint()),
+						DeviceName:  string(cecReq.DeviceName()),
+						Platform:    string(cecReq.Platform()),
+						OSVersion:   string(cecReq.OsVersion()),
+						AppVersion:  string(cecReq.AppVersion()),
+					},
+				})
+				if err != nil {
+					logger.FromContext(reqCtx).WithField("error", err).Warn("ConfirmEmailCode failed")
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeINVALID_CODE, err.Error())
+					return
+				}
+
+				currentAccountID = sess.AccountID
+				currentSessionID = sess.ID
+				if activeConn != nil {
+					registry.Unregister(activeConn.ID)
+				}
+				activeConn = registry.Register(conn, currentAccountID)
+
+				var currentSeq updatelog.Seq
+				if updateRepo != nil {
+					currentSeq, _ = updateRepo.CurrentSeq(reqCtx, currentAccountID)
+				}
+
+				if err := writeConfirmEmailCodeAck(conn, env.RequestId(), string(sess.ID), uint64(sess.DeviceID), int64(currentSeq)); err != nil {
+					return
+				}
+
+			case gen.BodyCreateQRTicket:
+				unionTable := new(flatbuffers.Table)
+				if !env.Body(unionTable) {
+					logger.FromContext(reqCtx).Warn("sent malformed CreateQRTicket frame")
+					return
+				}
+				cqrReq := new(gen.CreateQRTicket)
+				cqrReq.Init(unionTable.Bytes, unionTable.Pos)
+
+				ticket, err := qrLoginUC.CreateTicket(reqCtx, nodeID, conn.RemoteStaticKey())
+				if err != nil {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeUNKNOWN, err.Error())
+					return
+				}
+
+				if activeConn == nil {
+					activeConn = &transport.ActiveConn{
+						Conn:         conn,
+						DevicePubKey: conn.RemoteStaticKey(),
+					}
+				}
+
+				registry.RegisterPendingQR(ticket.ID, activeConn)
+
+				if err := writeCreateQRTicketAck(conn, env.RequestId(), string(ticket.ID), ticket.ExpiresAt.Unix()); err != nil {
+					return
+				}
+
+			case gen.BodyScanQRTicket:
+				unionTable := new(flatbuffers.Table)
+				if !env.Body(unionTable) {
+					logger.FromContext(reqCtx).Warn("sent malformed ScanQRTicket frame")
+					return
+				}
+				sqrReq := new(gen.ScanQRTicket)
+				sqrReq.Init(unionTable.Bytes, unionTable.Pos)
+
+				if err := qrLoginUC.Scan(reqCtx, qrlogin.TicketID(sqrReq.TicketId())); err != nil {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeQR_TICKET_NOT_FOUND, err.Error())
+					return
+				}
+
+			case gen.BodyConfirmQRTicket:
+				unionTable := new(flatbuffers.Table)
+				if !env.Body(unionTable) {
+					logger.FromContext(reqCtx).Warn("sent malformed ConfirmQRTicket frame")
+					return
+				}
+				cqrReq := new(gen.ConfirmQRTicket)
+				cqrReq.Init(unionTable.Bytes, unionTable.Pos)
+
+				if currentAccountID == 0 {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeSESSION_NOT_FOUND, "not authenticated")
+					return
+				}
+
+				var devID device.DeviceID
+				if activeConn != nil {
+					devID = device.DeviceID(0)
+				}
+
+				if err := qrLoginUC.Confirm(reqCtx, qrlogin.TicketID(cqrReq.TicketId()), currentAccountID, devID); err != nil {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeQR_TICKET_NOT_FOUND, err.Error())
+					return
+				}
+
+			case gen.BodyDenyQRTicket:
+				unionTable := new(flatbuffers.Table)
+				if !env.Body(unionTable) {
+					logger.FromContext(reqCtx).Warn("sent malformed DenyQRTicket frame")
+					return
+				}
+				dqrReq := new(gen.DenyQRTicket)
+				dqrReq.Init(unionTable.Bytes, unionTable.Pos)
+
+				if err := qrLoginUC.Deny(reqCtx, qrlogin.TicketID(dqrReq.TicketId())); err != nil {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeQR_TICKET_NOT_FOUND, err.Error())
+					return
+				}
+
+			case gen.BodyLogout:
+				if currentSessionID != "" {
+					_ = sessionMgmtUC.Logout(reqCtx, currentSessionID)
+				}
+				if activeConn != nil {
+					registry.Unregister(activeConn.ID)
+					activeConn = nil
+				}
+				currentAccountID = 0
+				currentSessionID = ""
+				_ = writeLogoutAck(conn, env.RequestId())
+
+			case gen.BodyListSessions:
+				if currentAccountID == 0 {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeSESSION_NOT_FOUND, "not authenticated")
+					return
+				}
+				sessions, err := sessionMgmtUC.ListSessions(reqCtx, currentAccountID)
+				if err != nil {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeUNKNOWN, err.Error())
+					return
+				}
+				_ = writeListSessionsAck(conn, env.RequestId(), sessions, currentSessionID)
+
+			case gen.BodyLogoutAllSessions:
+				unionTable := new(flatbuffers.Table)
+				if !env.Body(unionTable) {
+					logger.FromContext(reqCtx).Warn("sent malformed LogoutAllSessions frame")
+					return
+				}
+				lasReq := new(gen.LogoutAllSessions)
+				lasReq.Init(unionTable.Bytes, unionTable.Pos)
+
+				if currentAccountID == 0 {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeSESSION_NOT_FOUND, "not authenticated")
+					return
+				}
+				err := sessionMgmtUC.LogoutAll(reqCtx, currentAccountID, currentSessionID, lasReq.ExceptCurrent())
+				if err != nil {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeUNKNOWN, err.Error())
+					return
+				}
+				_ = writeLogoutAllSessionsAck(conn, env.RequestId(), 1)
+
+			case gen.BodySetSessionTTL:
+				unionTable := new(flatbuffers.Table)
+				if !env.Body(unionTable) {
+					logger.FromContext(reqCtx).Warn("sent malformed SetSessionTTL frame")
+					return
+				}
+				sttlReq := new(gen.SetSessionTTL)
+				sttlReq.Init(unionTable.Bytes, unionTable.Pos)
+
+				if currentAccountID == 0 {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeSESSION_NOT_FOUND, "not authenticated")
+					return
+				}
+
+				var months *int
+				if sttlReq.HasMonths() {
+					val := int(sttlReq.Months())
+					months = &val
+				}
+
+				if err := sessionMgmtUC.SetSessionTTL(reqCtx, currentAccountID, months); err != nil {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeINVALID_SESSION_TTL, err.Error())
+					return
+				}
+				_ = writeSetSessionTTLAck(conn, env.RequestId())
+
 			case gen.BodySendMessage:
 				unionTable := new(flatbuffers.Table)
 				if !env.Body(unionTable) {
@@ -244,11 +605,6 @@ func newHandler(
 				clientMsgID := string(smReq.ClientMsgId())
 				text := string(smReq.Text())
 
-				logger.FromContext(reqCtx).WithFields(logrus.Fields{
-					"recipient_id":  recipientID,
-					"client_msg_id": clientMsgID,
-				}).Info("received SendMessage")
-
 				if currentAccountID == 0 {
 					_ = writeError(conn, env.RequestId(), gen.ErrorCodeSESSION_NOT_FOUND, "not authenticated")
 					return
@@ -256,13 +612,11 @@ func newHandler(
 
 				msg, _, err := messageUC.SendMessage(reqCtx, currentAccountID, recipientID, clientMsgID, text)
 				if err != nil {
-					logger.FromContext(reqCtx).WithField("error", err).Warn("SendMessage failed")
 					_ = writeError(conn, env.RequestId(), gen.ErrorCodeINVALID_RECIPIENT, err.Error())
 					return
 				}
 
 				if err := writeSendMessageAck(conn, env.RequestId(), msg.ClientMsgID, string(msg.ID), msg.CreatedAt.Unix()); err != nil {
-					logger.FromContext(reqCtx).WithField("error", err).Warn("failed to write SendMessageAck")
 					return
 				}
 
@@ -285,12 +639,10 @@ func newHandler(
 					reqCtx, currentAccountID, updatelog.Seq(gdReq.SinceSeq()), diffLimit,
 				)
 				if err != nil {
-					logger.FromContext(reqCtx).WithField("error", err).Warn("GetDifference failed")
 					_ = writeError(conn, env.RequestId(), gen.ErrorCodeUNKNOWN, err.Error())
 					return
 				}
 				if err := writeDifferenceAck(conn, env.RequestId(), updates, curSeq, hasMore); err != nil {
-					logger.FromContext(reqCtx).WithField("error", err).Warn("failed to write DifferenceAck")
 					return
 				}
 
@@ -348,6 +700,200 @@ func writeResumeSessionAck(conn *noiseik.Conn, requestID uint64, sessionID strin
 	gen.EnvelopeStart(b)
 	gen.EnvelopeAddRequestId(b, requestID)
 	gen.EnvelopeAddBodyType(b, gen.BodyResumeSessionAck)
+	gen.EnvelopeAddBody(b, ack)
+	env := gen.EnvelopeEnd(b)
+	b.Finish(env)
+
+	return conn.WriteFrame(b.FinishedBytes())
+}
+
+func writeRegisterAccountAck(conn *noiseik.Conn, requestID uint64, accountID uint64) error {
+	b := flatbuffers.NewBuilder(64)
+	gen.RegisterAccountAckStart(b)
+	gen.RegisterAccountAckAddAccountId(b, accountID)
+	ack := gen.RegisterAccountAckEnd(b)
+
+	gen.EnvelopeStart(b)
+	gen.EnvelopeAddRequestId(b, requestID)
+	gen.EnvelopeAddBodyType(b, gen.BodyRegisterAccountAck)
+	gen.EnvelopeAddBody(b, ack)
+	env := gen.EnvelopeEnd(b)
+	b.Finish(env)
+
+	return conn.WriteFrame(b.FinishedBytes())
+}
+
+func writeConfirmEmailCodeAck(conn *noiseik.Conn, requestID uint64, sessionID string, deviceID uint64, currentSeq int64) error {
+	b := flatbuffers.NewBuilder(128)
+	sessIDOffset := b.CreateString(sessionID)
+
+	gen.ConfirmEmailCodeAckStart(b)
+	gen.ConfirmEmailCodeAckAddSessionId(b, sessIDOffset)
+	gen.ConfirmEmailCodeAckAddDeviceId(b, deviceID)
+	gen.ConfirmEmailCodeAckAddCurrentSeq(b, currentSeq)
+	ack := gen.ConfirmEmailCodeAckEnd(b)
+
+	gen.EnvelopeStart(b)
+	gen.EnvelopeAddRequestId(b, requestID)
+	gen.EnvelopeAddBodyType(b, gen.BodyConfirmEmailCodeAck)
+	gen.EnvelopeAddBody(b, ack)
+	env := gen.EnvelopeEnd(b)
+	b.Finish(env)
+
+	return conn.WriteFrame(b.FinishedBytes())
+}
+
+func writeCreateQRTicketAck(conn *noiseik.Conn, requestID uint64, ticketID string, expiresAt int64) error {
+	b := flatbuffers.NewBuilder(128)
+	tIDOffset := b.CreateString(ticketID)
+
+	gen.CreateQRTicketAckStart(b)
+	gen.CreateQRTicketAckAddTicketId(b, tIDOffset)
+	gen.CreateQRTicketAckAddExpiresAt(b, expiresAt)
+	ack := gen.CreateQRTicketAckEnd(b)
+
+	gen.EnvelopeStart(b)
+	gen.EnvelopeAddRequestId(b, requestID)
+	gen.EnvelopeAddBodyType(b, gen.BodyCreateQRTicketAck)
+	gen.EnvelopeAddBody(b, ack)
+	env := gen.EnvelopeEnd(b)
+	b.Finish(env)
+
+	return conn.WriteFrame(b.FinishedBytes())
+}
+
+func writeQRTicketStatusUpdate(conn *noiseik.Conn, requestID uint64, ticketID string, status gen.QRTicketStatus) error {
+	b := flatbuffers.NewBuilder(128)
+	tIDOffset := b.CreateString(ticketID)
+
+	gen.QRTicketStatusUpdateStart(b)
+	gen.QRTicketStatusUpdateAddTicketId(b, tIDOffset)
+	gen.QRTicketStatusUpdateAddStatus(b, status)
+	upd := gen.QRTicketStatusUpdateEnd(b)
+
+	gen.EnvelopeStart(b)
+	gen.EnvelopeAddRequestId(b, requestID)
+	gen.EnvelopeAddBodyType(b, gen.BodyQRTicketStatusUpdate)
+	gen.EnvelopeAddBody(b, upd)
+	env := gen.EnvelopeEnd(b)
+	b.Finish(env)
+
+	return conn.WriteFrame(b.FinishedBytes())
+}
+
+func writeQRLoginAck(conn *noiseik.Conn, requestID uint64, sessionID string, deviceID, accountID uint64, currentSeq int64) error {
+	b := flatbuffers.NewBuilder(128)
+	sessIDOffset := b.CreateString(sessionID)
+
+	gen.QRLoginAckStart(b)
+	gen.QRLoginAckAddSessionId(b, sessIDOffset)
+	gen.QRLoginAckAddDeviceId(b, deviceID)
+	gen.QRLoginAckAddAccountId(b, accountID)
+	gen.QRLoginAckAddCurrentSeq(b, currentSeq)
+	ack := gen.QRLoginAckEnd(b)
+
+	gen.EnvelopeStart(b)
+	gen.EnvelopeAddRequestId(b, requestID)
+	gen.EnvelopeAddBodyType(b, gen.BodyQRLoginAck)
+	gen.EnvelopeAddBody(b, ack)
+	env := gen.EnvelopeEnd(b)
+	b.Finish(env)
+
+	return conn.WriteFrame(b.FinishedBytes())
+}
+
+func writeLogoutAck(conn *noiseik.Conn, requestID uint64) error {
+	b := flatbuffers.NewBuilder(64)
+	gen.LogoutAckStart(b)
+	ack := gen.LogoutAckEnd(b)
+
+	gen.EnvelopeStart(b)
+	gen.EnvelopeAddRequestId(b, requestID)
+	gen.EnvelopeAddBodyType(b, gen.BodyLogoutAck)
+	gen.EnvelopeAddBody(b, ack)
+	env := gen.EnvelopeEnd(b)
+	b.Finish(env)
+
+	return conn.WriteFrame(b.FinishedBytes())
+}
+
+func writeListSessionsAck(conn *noiseik.Conn, requestID uint64, sessions []session.Session, currentSessionID session.SessionID) error {
+	b := flatbuffers.NewBuilder(512)
+
+	type sessData struct {
+		sID      flatbuffers.UOffsetT
+		dName    flatbuffers.UOffsetT
+		platform flatbuffers.UOffsetT
+		osVer    flatbuffers.UOffsetT
+	}
+	sds := make([]sessData, len(sessions))
+	for i, s := range sessions {
+		sds[i] = sessData{
+			sID:      b.CreateString(string(s.ID)),
+			dName:    b.CreateString("Device"),
+			platform: b.CreateString("macOS"),
+			osVer:    b.CreateString("15.0"),
+		}
+	}
+
+	infoOffsets := make([]flatbuffers.UOffsetT, len(sessions))
+	for i, s := range sessions {
+		gen.SessionInfoStart(b)
+		gen.SessionInfoAddSessionId(b, sds[i].sID)
+		gen.SessionInfoAddDeviceId(b, uint64(s.DeviceID))
+		gen.SessionInfoAddDeviceName(b, sds[i].dName)
+		gen.SessionInfoAddPlatform(b, sds[i].platform)
+		gen.SessionInfoAddOsVersion(b, sds[i].osVer)
+		gen.SessionInfoAddIsCurrent(b, s.ID == currentSessionID)
+		gen.SessionInfoAddCreatedAt(b, s.CreatedAt.Unix())
+		gen.SessionInfoAddLastActiveAt(b, s.LastActiveAt.Unix())
+		infoOffsets[i] = gen.SessionInfoEnd(b)
+	}
+
+	gen.ListSessionsAckStartSessionsVector(b, len(infoOffsets))
+	for i := len(infoOffsets) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(infoOffsets[i])
+	}
+	vec := b.EndVector(len(infoOffsets))
+
+	gen.ListSessionsAckStart(b)
+	gen.ListSessionsAckAddSessions(b, vec)
+	ack := gen.ListSessionsAckEnd(b)
+
+	gen.EnvelopeStart(b)
+	gen.EnvelopeAddRequestId(b, requestID)
+	gen.EnvelopeAddBodyType(b, gen.BodyListSessionsAck)
+	gen.EnvelopeAddBody(b, ack)
+	env := gen.EnvelopeEnd(b)
+	b.Finish(env)
+
+	return conn.WriteFrame(b.FinishedBytes())
+}
+
+func writeLogoutAllSessionsAck(conn *noiseik.Conn, requestID uint64, count int) error {
+	b := flatbuffers.NewBuilder(64)
+	gen.LogoutAllSessionsAckStart(b)
+	gen.LogoutAllSessionsAckAddRevokedCount(b, int32(count))
+	ack := gen.LogoutAllSessionsAckEnd(b)
+
+	gen.EnvelopeStart(b)
+	gen.EnvelopeAddRequestId(b, requestID)
+	gen.EnvelopeAddBodyType(b, gen.BodyLogoutAllSessionsAck)
+	gen.EnvelopeAddBody(b, ack)
+	env := gen.EnvelopeEnd(b)
+	b.Finish(env)
+
+	return conn.WriteFrame(b.FinishedBytes())
+}
+
+func writeSetSessionTTLAck(conn *noiseik.Conn, requestID uint64) error {
+	b := flatbuffers.NewBuilder(64)
+	gen.SetSessionTTLAckStart(b)
+	ack := gen.SetSessionTTLAckEnd(b)
+
+	gen.EnvelopeStart(b)
+	gen.EnvelopeAddRequestId(b, requestID)
+	gen.EnvelopeAddBodyType(b, gen.BodySetSessionTTLAck)
 	gen.EnvelopeAddBody(b, ack)
 	env := gen.EnvelopeEnd(b)
 	b.Finish(env)

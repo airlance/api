@@ -12,9 +12,20 @@ var ErrDeviceNotFound = errors.New("device not found")
 type DeviceID uint64
 
 type Device struct {
-	ID        DeviceID
-	AccountID account.AccountID
-	PublicKey []byte
-	CreatedAt time.Time
-	LastSeen  time.Time
+	ID          DeviceID
+	AccountID   account.AccountID
+	PublicKey   []byte
+	Fingerprint string
+	DeviceName  string
+	Platform    string
+	OSVersion   string
+	AppVersion  string
+	PushToken   string
+	FirstSeenAt time.Time
+	LastSeenAt  time.Time
+	RevokedAt   *time.Time
+}
+
+func (d Device) IsRevoked() bool {
+	return d.RevokedAt != nil
 }

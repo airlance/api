@@ -45,3 +45,69 @@ func (r *SessionRepository) DeleteSession(ctx context.Context, id session.Sessio
 	r.sessions.Delete(id)
 	return nil
 }
+
+func (r *SessionRepository) TouchLastActive(ctx context.Context, id session.SessionID) error {
+	val, ok := r.sessions.Load(id)
+	if !ok {
+		return session.ErrSessionNotFound
+	}
+	sess := val.(session.Session)
+	sess.LastActiveAt = time.Now()
+	r.sessions.Store(id, sess)
+	return nil
+}
+
+func (r *SessionRepository) ListActiveByAccount(ctx context.Context, accountID account.AccountID) ([]session.Session, error) {
+	var res []session.Session
+	r.sessions.Range(func(key, value any) bool {
+		s := value.(session.Session)
+		if s.AccountID == accountID && s.IsActive() {
+			res = append(res, s)
+		}
+		return true
+	})
+	return res, nil
+}
+
+func (r *SessionRepository) Revoke(ctx context.Context, id session.SessionID) error {
+	val, ok := r.sessions.Load(id)
+	if !ok {
+		return session.ErrSessionNotFound
+	}
+	sess := val.(session.Session)
+	now := time.Now()
+	sess.RevokedAt = &now
+	r.sessions.Store(id, sess)
+	return nil
+}
+
+func (r *SessionRepository) RevokeAllByAccount(ctx context.Context, accountID account.AccountID, exceptSessionID *session.SessionID) error {
+	now := time.Now()
+	r.sessions.Range(func(key, value any) bool {
+		s := value.(session.Session)
+		if s.AccountID == accountID && s.IsActive() {
+			if exceptSessionID != nil && s.ID == *exceptSessionID {
+				return true
+			}
+			s.RevokedAt = &now
+			r.sessions.Store(s.ID, s)
+		}
+		return true
+	})
+	return nil
+}
+
+func (r *SessionRepository) RevokeInactiveOlderThan(ctx context.Context, cutoff time.Time) (int, error) {
+	count := 0
+	now := time.Now()
+	r.sessions.Range(func(key, value any) bool {
+		s := value.(session.Session)
+		if s.IsActive() && s.LastActiveAt.Before(cutoff) {
+			s.RevokedAt = &now
+			r.sessions.Store(s.ID, s)
+			count++
+		}
+		return true
+	})
+	return count, nil
+}

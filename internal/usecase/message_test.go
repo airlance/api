@@ -6,6 +6,7 @@ import (
 
 	"github.com/airlance/api/internal/domain/account"
 	"github.com/airlance/api/internal/domain/message"
+	"github.com/airlance/api/internal/domain/updatelog"
 )
 
 type mockMessageRepo struct {
@@ -35,14 +36,65 @@ func (m *mockMessageRepo) UpdateState(ctx context.Context, id message.MessageID,
 	return nil
 }
 
+type mockUpdateLogRepo struct {
+	updates []updatelog.Update
+	seq     updatelog.Seq
+}
+
+func (m *mockUpdateLogRepo) Append(ctx context.Context, accountID account.AccountID, kind updatelog.UpdateKind, payload []byte) (updatelog.Seq, error) {
+	m.seq++
+	u := updatelog.Update{
+		AccountID: accountID,
+		Seq:       m.seq,
+		Payload:   payload,
+		Kind:      kind,
+	}
+	m.updates = append(m.updates, u)
+	return m.seq, nil
+}
+
+func (m *mockUpdateLogRepo) ListSince(ctx context.Context, accountID account.AccountID, sinceSeq updatelog.Seq, limit int) ([]updatelog.Update, updatelog.Seq, bool, error) {
+	var res []updatelog.Update
+	for _, u := range m.updates {
+		if u.AccountID == accountID && u.Seq > sinceSeq {
+			res = append(res, u)
+		}
+	}
+	hasMore := false
+	if len(res) > limit {
+		hasMore = true
+		res = res[:limit]
+	}
+	return res, m.seq, hasMore, nil
+}
+
+func (m *mockUpdateLogRepo) CurrentSeq(ctx context.Context, accountID account.AccountID) (updatelog.Seq, error) {
+	return m.seq, nil
+}
+
+type mockUOW struct {
+	repo    message.Repository
+	updates updatelog.Repository
+}
+
+func (u *mockUOW) Execute(ctx context.Context, fn func(ctx context.Context, s TxStore) error) error {
+	return fn(ctx, TxStore{Messages: u.repo, Updates: u.updates})
+}
+
 func TestMessageUseCase_SendMessage(t *testing.T) {
 	ctx := context.Background()
 	repo := &mockMessageRepo{msgs: make(map[message.MessageID]message.Message)}
-	uc := NewMessageUseCase(repo, nil)
+	updatesRepo := &mockUpdateLogRepo{}
+	uow := &mockUOW{repo: repo, updates: updatesRepo}
 
-	msg, err := uc.SendMessage(ctx, account.AccountID(1), account.AccountID(2), "c_msg_1", "Hello World!")
+	uc := NewMessageUseCase(uow, updatesRepo, nil)
+
+	msg, seq, err := uc.SendMessage(ctx, account.AccountID(1), account.AccountID(2), "c_msg_1", "Hello World!")
 	if err != nil {
 		t.Fatalf("SendMessage failed: %v", err)
+	}
+	if seq != 1 {
+		t.Fatalf("expected seq 1, got %d", seq)
 	}
 	if msg.ClientMsgID != "c_msg_1" {
 		t.Fatalf("expected client msg ID c_msg_1, got %s", msg.ClientMsgID)
@@ -54,8 +106,34 @@ func TestMessageUseCase_SendMessage(t *testing.T) {
 		t.Fatalf("expected state StateServerAccepted, got %v", msg.State)
 	}
 
-	_, err = uc.SendMessage(ctx, account.AccountID(1), account.AccountID(0), "c_msg_2", "Hello")
+	_, _, err = uc.SendMessage(ctx, account.AccountID(1), account.AccountID(0), "c_msg_2", "Hello")
 	if err == nil {
 		t.Fatal("expected error for recipient ID 0, got nil")
+	}
+}
+
+func TestMessageUseCase_GetDifference(t *testing.T) {
+	ctx := context.Background()
+	repo := &mockMessageRepo{msgs: make(map[message.MessageID]message.Message)}
+	updatesRepo := &mockUpdateLogRepo{}
+	uow := &mockUOW{repo: repo, updates: updatesRepo}
+
+	uc := NewMessageUseCase(uow, updatesRepo, nil)
+
+	_, _, _ = uc.SendMessage(ctx, account.AccountID(1), account.AccountID(2), "c_msg_1", "Hello 1")
+	_, _, _ = uc.SendMessage(ctx, account.AccountID(1), account.AccountID(2), "c_msg_2", "Hello 2")
+
+	updates, curSeq, hasMore, err := uc.GetDifference(ctx, account.AccountID(2), 0, 10)
+	if err != nil {
+		t.Fatalf("GetDifference failed: %v", err)
+	}
+	if curSeq != 2 {
+		t.Fatalf("expected curSeq 2, got %d", curSeq)
+	}
+	if len(updates) != 2 {
+		t.Fatalf("expected 2 updates, got %d", len(updates))
+	}
+	if hasMore {
+		t.Fatal("expected hasMore = false")
 	}
 }

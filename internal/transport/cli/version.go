@@ -8,10 +8,8 @@ import (
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Show build information",
+	Short: "Print application version",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("Version: %s\n", appVersion)
-		fmt.Printf("Commit: %s\n", appCommit)
-		fmt.Printf("Build Date: %s\n", appBuildDate)
+		fmt.Printf("Messenger Version: %s\nCommit: %s\nBuild Date: %s\n", appVersion, appCommit, appBuildDate)
 	},
 }

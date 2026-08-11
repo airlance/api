@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
@@ -10,44 +11,26 @@ import (
 type Config struct {
 	App      App
 	Log      Log
+	Server   Server
 	Database Database
-	Redis    Redis
-	Grpc     Grpc
-	Http     Http
-	Auth     Auth
 }
 
 type App struct {
 	Env string `envconfig:"APP_ENV" required:"true"`
 }
 
-type Grpc struct {
-	Port       string `envconfig:"GRPC_PORT" default:"9090"`
-	TLSKeyPath string `envconfig:"GRPC_TLS_KEY_PATH" required:"true"`
+type Log struct {
+	Level string `envconfig:"LOG_LEVEL" required:"true"`
 }
 
-type Http struct {
-	Port string `envconfig:"HTTP_PORT" default:"8080"`
+type Server struct {
+	Addr             string        `envconfig:"SERVER_ADDR" required:"true"`
+	KeyPath          string        `envconfig:"SERVER_KEY_PATH" required:"true"`
+	HeartbeatTimeout time.Duration `envconfig:"SERVER_HEARTBEAT_TIMEOUT" required:"true"`
 }
 
 type Database struct {
 	DSN string `envconfig:"DB_DSN" required:"true"`
-}
-
-type Redis struct {
-	Addr string `envconfig:"REDIS_ADDR" required:"true"`
-}
-
-type Auth struct {
-	ServerInstanceID   string `envconfig:"SERVER_INSTANCE_ID" required:"true"`
-	GithubClientID     string `envconfig:"GITHUB_CLIENT_ID" required:"true"`
-	GithubClientSecret string `envconfig:"GITHUB_CLIENT_SECRET" required:"true"`
-	GithubRedirectURI  string `envconfig:"GITHUB_REDIRECT_URI" required:"true"`
-	AppCallbackURL     string `envconfig:"APP_CALLBACK_URL" required:"true"`
-}
-
-type Log struct {
-	Level string `envconfig:"LOG_LEVEL" required:"true"`
 }
 
 func Load() (*Config, error) {

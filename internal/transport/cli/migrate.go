@@ -3,9 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"log"
 
-	"github.com/airlance/api/internal/config"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -13,6 +11,7 @@ import (
 )
 
 var (
+	migrateDSN       string
 	migrateDownSteps int
 )
 
@@ -38,14 +37,15 @@ var migrateDownCmd = &cobra.Command{
 }
 
 func init() {
+	migrateCmd.PersistentFlags().StringVar(&migrateDSN, "dsn", "postgres://postgres:postgres@localhost:5432/messenger?sslmode=disable", "PostgreSQL DSN")
 	migrateDownCmd.Flags().IntVar(&migrateDownSteps, "steps", 1, "number of migrations to roll back")
 
 	migrateCmd.AddCommand(migrateUpCmd)
 	migrateCmd.AddCommand(migrateDownCmd)
 }
 
-func getMigrator(cfg *config.Config) (*migrate.Migrate, error) {
-	m, err := migrate.New("file://migrations/postgres", cfg.Database.DSN)
+func getMigrator() (*migrate.Migrate, error) {
+	m, err := migrate.New("file://migrations/postgres", migrateDSN)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize migrator: %w", err)
 	}
@@ -53,18 +53,12 @@ func getMigrator(cfg *config.Config) (*migrate.Migrate, error) {
 }
 
 func runMigrateUp() error {
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-	m, err := getMigrator(cfg)
+	m, err := getMigrator()
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if err, _ := m.Close(); err != nil {
-			log.Printf("Failed to close migrator: %v", err)
-		}
+		_, _ = m.Close()
 	}()
 
 	if err := m.Up(); err != nil {
@@ -79,18 +73,12 @@ func runMigrateUp() error {
 }
 
 func runMigrateDown(steps int) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-	m, err := getMigrator(cfg)
+	m, err := getMigrator()
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if err, _ := m.Close(); err != nil {
-			log.Printf("Failed to close migrator: %v", err)
-		}
+		_, _ = m.Close()
 	}()
 
 	if err := m.Steps(-steps); err != nil {

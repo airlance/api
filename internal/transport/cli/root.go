@@ -13,14 +13,15 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "app",
-	Short: "Airlance Application",
+	Use:   "messenger",
+	Short: "Messenger Go Backend",
 }
 
 func init() {
 	rootCmd.AddCommand(serveCmd)
-	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(keygenCmd)
 	rootCmd.AddCommand(migrateCmd)
+	rootCmd.AddCommand(versionCmd)
 }
 
 func Execute(version, commit, buildDate string) {

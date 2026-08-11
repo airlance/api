@@ -9,7 +9,7 @@ LDFLAGS := -s -w \
 	-X main.Commit=$(COMMIT) \
 	-X main.BuildDate=$(BUILD_DATE)
 
-.PHONY: help version run fmt vet lint tidy migrate-up migrate-down migrate-create up zip generate-keys
+.PHONY: help version run fmt vet lint tidy migrate-up migrate-down migrate-create up zip keygen
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-25s %s\n", $$1, $$2}'
@@ -57,8 +57,8 @@ migrate-down: ## Rollback one migration
 migrate-create: ## Create migration
 	go run $(CMD_DIR) migrate create $(name)
 
-generate-keys: ## Generate private key
-	openssl genrsa -out server.key 2048
+keygen: ## Generate keys for development
+	go run $(CMD_DIR) keygen --key-id=v1
 
 zip: ## Archive project
 	COPYFILE_DISABLE=1 zip -r api.zip . -x ".git/*" ".idea/*" ".env" ".gitignore" "app" "server.key" "Makefile" "*.DS_Store" "*/.DS_Store" "__MACOSX/*"

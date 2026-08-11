@@ -1,18 +1,4 @@
 services:
-  caddy:
-    image: caddy:latest
-    container_name: caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./hosts:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    networks:
-      - airlance
-
   postgres:
     image: postgres:17-alpine
     container_name: postgres
@@ -32,14 +18,10 @@ services:
     image: airlance/api:dev
     container_name: api
     ports:
-      - "9090:9090"
       - "8080:8080"
     volumes:
       - .:/app
     restart: unless-stopped
-    environment:
-      - APP_ENV=${APP_ENV}
-      - GRPC_TLS_KEY_PATH=/app/server.key
     depends_on:
       postgres:
         condition: service_started
@@ -62,12 +44,12 @@ services:
     image: adminer
     container_name: adminer
     restart: unless-stopped
+    ports:
+      - "9090:8080"
     networks:
       - airlance
 
 volumes:
-  caddy_data:
-  caddy_config:
   redis_data:
   postgres_data:
 

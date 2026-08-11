@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -9,14 +10,17 @@ import (
 	"github.com/airlance/api/internal/domain/account"
 	"github.com/airlance/api/internal/domain/device"
 	"github.com/airlance/api/internal/domain/session"
+	"github.com/airlance/api/internal/domain/updatelog"
 	"github.com/airlance/api/internal/infrastructure/logger"
 	"github.com/airlance/api/internal/infrastructure/memory"
+	"github.com/airlance/api/internal/infrastructure/postgres"
 	"github.com/airlance/api/internal/infrastructure/serverkey"
 	"github.com/airlance/api/internal/noiseik"
 	gen "github.com/airlance/api/internal/protocol/generated/Protocol"
 	"github.com/airlance/api/internal/transport"
 	"github.com/airlance/api/internal/usecase"
 	flatbuffers "github.com/google/flatbuffers/go"
+	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -60,6 +64,18 @@ var serveCmd = &cobra.Command{
 			"public_key": fmt.Sprintf("%x", kp.PublicKey().Bytes()),
 		}).Info("loaded server keypair")
 
+		db, err := sql.Open("postgres", cfg.Database.DSN)
+		if err != nil {
+			return fmt.Errorf("server: open db failed: %w", err)
+		}
+		defer db.Close()
+		if err := db.PingContext(cmd.Context()); err != nil {
+			return fmt.Errorf("server: ping db failed: %w", err)
+		}
+
+		uow := postgres.NewUnitOfWork(db)
+		updateRepo := postgres.NewUpdateLogRepository(db)
+
 		registry := transport.NewConnectionRegistry()
 		router := transport.NewMessageRouter()
 		defer router.Close()
@@ -67,9 +83,9 @@ var serveCmd = &cobra.Command{
 		sessionRepo := memory.NewSessionRepository()
 		sessionUC := usecase.NewSessionUseCase(sessionRepo, nil)
 		heartbeatUC := usecase.NewHeartbeatUseCase(nil)
-		messageUC := usecase.NewMessageUseCase(nil, nil)
+		messageUC := usecase.NewMessageUseCase(uow, updateRepo, registry)
 
-		l := transport.NewListener(cfg.Server.Addr, newHandler(kp, registry, router, sessionUC, heartbeatUC, messageUC, cfg.Server.HeartbeatTimeout))
+		l := transport.NewListener(cfg.Server.Addr, newHandler(kp, registry, router, sessionUC, heartbeatUC, messageUC, updateRepo, cfg.Server.HeartbeatTimeout))
 		logger.Log.WithFields(logrus.Fields{
 			"addr":              cfg.Server.Addr,
 			"heartbeat_timeout": cfg.Server.HeartbeatTimeout,
@@ -92,6 +108,7 @@ func newHandler(
 	sessionUC *usecase.SessionUseCase,
 	heartbeatUC *usecase.HeartbeatUseCase,
 	messageUC *usecase.MessageUseCase,
+	updateRepo updatelog.Repository,
 	timeout time.Duration,
 ) transport.Handler {
 	return func(rawConn *transport.Connection) {
@@ -107,12 +124,19 @@ func newHandler(
 			return
 		}
 
-		active := registry.Register(conn)
-		defer registry.Unregister(active.ID)
+		var (
+			currentAccountID account.AccountID
+			activeConn       *transport.ActiveConn
+		)
+
+		defer func() {
+			if activeConn != nil {
+				registry.Unregister(activeConn.ID)
+			}
+		}()
 
 		entry := logger.Log.WithFields(logrus.Fields{
 			"remote":     remote,
-			"conn_id":    active.ID,
 			"static_key": fmt.Sprintf("%x", conn.RemoteStaticKey()),
 		})
 		entry.Info("completed Noise IK handshake")
@@ -159,7 +183,17 @@ func newHandler(
 					_ = writeError(conn, env.RequestId(), gen.ErrorCodeSESSION_NOT_FOUND, err.Error())
 					return
 				}
-				if err := writeNewSessionAck(conn, env.RequestId(), string(sess.ID)); err != nil {
+				currentAccountID = sess.AccountID
+				if activeConn != nil {
+					registry.Unregister(activeConn.ID)
+				}
+				activeConn = registry.Register(conn, currentAccountID)
+
+				var currentSeq updatelog.Seq
+				if updateRepo != nil {
+					currentSeq, _ = updateRepo.CurrentSeq(reqCtx, currentAccountID)
+				}
+				if err := writeNewSessionAck(conn, env.RequestId(), string(sess.ID), currentSeq); err != nil {
 					logger.FromContext(reqCtx).WithField("error", err).Warn("failed to write NewSessionAck")
 					return
 				}
@@ -182,7 +216,17 @@ func newHandler(
 					_ = writeError(conn, env.RequestId(), gen.ErrorCodeSESSION_NOT_FOUND, err.Error())
 					return
 				}
-				if err := writeResumeSessionAck(conn, env.RequestId(), string(sess.ID)); err != nil {
+				currentAccountID = sess.AccountID
+				if activeConn != nil {
+					registry.Unregister(activeConn.ID)
+				}
+				activeConn = registry.Register(conn, currentAccountID)
+
+				var currentSeq updatelog.Seq
+				if updateRepo != nil {
+					currentSeq, _ = updateRepo.CurrentSeq(reqCtx, currentAccountID)
+				}
+				if err := writeResumeSessionAck(conn, env.RequestId(), string(sess.ID), currentSeq); err != nil {
 					logger.FromContext(reqCtx).WithField("error", err).Warn("failed to write ResumeSessionAck")
 					return
 				}
@@ -205,7 +249,12 @@ func newHandler(
 					"client_msg_id": clientMsgID,
 				}).Info("received SendMessage")
 
-				msg, err := messageUC.SendMessage(reqCtx, account.AccountID(0), recipientID, clientMsgID, text)
+				if currentAccountID == 0 {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeSESSION_NOT_FOUND, "not authenticated")
+					return
+				}
+
+				msg, _, err := messageUC.SendMessage(reqCtx, currentAccountID, recipientID, clientMsgID, text)
 				if err != nil {
 					logger.FromContext(reqCtx).WithField("error", err).Warn("SendMessage failed")
 					_ = writeError(conn, env.RequestId(), gen.ErrorCodeINVALID_RECIPIENT, err.Error())
@@ -214,6 +263,34 @@ func newHandler(
 
 				if err := writeSendMessageAck(conn, env.RequestId(), msg.ClientMsgID, string(msg.ID), msg.CreatedAt.Unix()); err != nil {
 					logger.FromContext(reqCtx).WithField("error", err).Warn("failed to write SendMessageAck")
+					return
+				}
+
+			case gen.BodyGetDifference:
+				unionTable := new(flatbuffers.Table)
+				if !env.Body(unionTable) {
+					logger.FromContext(reqCtx).Warn("sent malformed GetDifference frame")
+					return
+				}
+				gdReq := new(gen.GetDifference)
+				gdReq.Init(unionTable.Bytes, unionTable.Pos)
+
+				if currentAccountID == 0 {
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeSESSION_NOT_FOUND, "not authenticated")
+					return
+				}
+
+				const diffLimit = 100
+				updates, curSeq, hasMore, err := messageUC.GetDifference(
+					reqCtx, currentAccountID, updatelog.Seq(gdReq.SinceSeq()), diffLimit,
+				)
+				if err != nil {
+					logger.FromContext(reqCtx).WithField("error", err).Warn("GetDifference failed")
+					_ = writeError(conn, env.RequestId(), gen.ErrorCodeUNKNOWN, err.Error())
+					return
+				}
+				if err := writeDifferenceAck(conn, env.RequestId(), updates, curSeq, hasMore); err != nil {
+					logger.FromContext(reqCtx).WithField("error", err).Warn("failed to write DifferenceAck")
 					return
 				}
 
@@ -240,12 +317,13 @@ func writePong(conn *noiseik.Conn, requestID uint64, timestamp int64) error {
 	return conn.WriteFrame(b.FinishedBytes())
 }
 
-func writeNewSessionAck(conn *noiseik.Conn, requestID uint64, sessionID string) error {
+func writeNewSessionAck(conn *noiseik.Conn, requestID uint64, sessionID string, currentSeq updatelog.Seq) error {
 	b := flatbuffers.NewBuilder(128)
 	sessIDOffset := b.CreateString(sessionID)
 
 	gen.NewSessionAckStart(b)
 	gen.NewSessionAckAddSessionId(b, sessIDOffset)
+	gen.NewSessionAckAddCurrentSeq(b, int64(currentSeq))
 	ack := gen.NewSessionAckEnd(b)
 
 	gen.EnvelopeStart(b)
@@ -258,12 +336,13 @@ func writeNewSessionAck(conn *noiseik.Conn, requestID uint64, sessionID string) 
 	return conn.WriteFrame(b.FinishedBytes())
 }
 
-func writeResumeSessionAck(conn *noiseik.Conn, requestID uint64, sessionID string) error {
+func writeResumeSessionAck(conn *noiseik.Conn, requestID uint64, sessionID string, currentSeq updatelog.Seq) error {
 	b := flatbuffers.NewBuilder(128)
 	sessIDOffset := b.CreateString(sessionID)
 
 	gen.ResumeSessionAckStart(b)
 	gen.ResumeSessionAckAddSessionId(b, sessIDOffset)
+	gen.ResumeSessionAckAddCurrentSeq(b, int64(currentSeq))
 	ack := gen.ResumeSessionAckEnd(b)
 
 	gen.EnvelopeStart(b)
@@ -290,6 +369,63 @@ func writeSendMessageAck(conn *noiseik.Conn, requestID uint64, clientMsgID, serv
 	gen.EnvelopeStart(b)
 	gen.EnvelopeAddRequestId(b, requestID)
 	gen.EnvelopeAddBodyType(b, gen.BodySendMessageAck)
+	gen.EnvelopeAddBody(b, ack)
+	env := gen.EnvelopeEnd(b)
+	b.Finish(env)
+
+	return conn.WriteFrame(b.FinishedBytes())
+}
+
+func writeDifferenceAck(
+	conn *noiseik.Conn,
+	requestID uint64,
+	updates []updatelog.Update,
+	currentSeq updatelog.Seq,
+	hasMore bool,
+) error {
+	b := flatbuffers.NewBuilder(512)
+
+	type muData struct {
+		srvID   flatbuffers.UOffsetT
+		textOff flatbuffers.UOffsetT
+		raw     *gen.MessageUpdate
+	}
+	mds := make([]muData, len(updates))
+	for i, u := range updates {
+		raw := gen.GetRootAsMessageUpdate(u.Payload, 0)
+		mds[i] = muData{
+			srvID:   b.CreateString(string(raw.ServerMsgId())),
+			textOff: b.CreateString(string(raw.Text())),
+			raw:     raw,
+		}
+	}
+
+	muOffsets := make([]flatbuffers.UOffsetT, len(updates))
+	for i, md := range mds {
+		gen.MessageUpdateStart(b)
+		gen.MessageUpdateAddServerMsgId(b, md.srvID)
+		gen.MessageUpdateAddSenderAccountId(b, md.raw.SenderAccountId())
+		gen.MessageUpdateAddText(b, md.textOff)
+		gen.MessageUpdateAddCreatedAt(b, md.raw.CreatedAt())
+		gen.MessageUpdateAddSeqNo(b, int64(updates[i].Seq))
+		muOffsets[i] = gen.MessageUpdateEnd(b)
+	}
+
+	gen.DifferenceAckStartUpdatesVector(b, len(muOffsets))
+	for i := len(muOffsets) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(muOffsets[i])
+	}
+	updatesVec := b.EndVector(len(muOffsets))
+
+	gen.DifferenceAckStart(b)
+	gen.DifferenceAckAddUpdates(b, updatesVec)
+	gen.DifferenceAckAddCurrentSeq(b, int64(currentSeq))
+	gen.DifferenceAckAddHasMore(b, hasMore)
+	ack := gen.DifferenceAckEnd(b)
+
+	gen.EnvelopeStart(b)
+	gen.EnvelopeAddRequestId(b, requestID)
+	gen.EnvelopeAddBodyType(b, gen.BodyDifferenceAck)
 	gen.EnvelopeAddBody(b, ack)
 	env := gen.EnvelopeEnd(b)
 	b.Finish(env)

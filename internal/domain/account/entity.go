@@ -11,15 +11,17 @@ var (
 	ErrInvalidCode           = errors.New("invalid or expired confirmation code")
 	ErrTooManyAttempts       = errors.New("too many confirmation attempts")
 	ErrRateLimitExceeded     = errors.New("rate limit exceeded")
+	ErrInvalidSessionTTL     = errors.New("invalid session ttl months")
 )
 
 type AccountID uint64
 
 type Account struct {
-	ID        AccountID
-	Email     string
-	FirstName string
-	LastName  string
-	Confirmed bool
-	CreatedAt time.Time
+	ID               AccountID
+	Email            string
+	FirstName        string
+	LastName         string
+	Confirmed        bool
+	SessionTTLMonths *int
+	CreatedAt        time.Time
 }

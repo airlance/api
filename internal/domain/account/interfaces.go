@@ -8,7 +8,9 @@ import (
 type Repository interface {
 	CreateAccount(ctx context.Context, email, firstName, lastName string) (Account, error)
 	FindByEmail(ctx context.Context, email string) (Account, error)
+	FindByID(ctx context.Context, id AccountID) (Account, error)
 	ConfirmAccount(ctx context.Context, id AccountID) error
+	SetSessionTTLMonths(ctx context.Context, id AccountID, months *int) error
 }
 
 type ConfirmationCodeRepository interface {

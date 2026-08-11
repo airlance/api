@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/airlance/api/internal/domain/account"
+	"github.com/airlance/api/internal/domain/qrlogin"
 )
 
 type NoiseConn interface {
@@ -28,12 +29,14 @@ type ConnectionRegistry struct {
 	mu        sync.RWMutex
 	conns     map[string]*ActiveConn
 	byAccount map[account.AccountID][]string
+	pendingQR map[qrlogin.TicketID]*ActiveConn
 }
 
 func NewConnectionRegistry() *ConnectionRegistry {
 	return &ConnectionRegistry{
 		conns:     make(map[string]*ActiveConn),
 		byAccount: make(map[account.AccountID][]string),
+		pendingQR: make(map[qrlogin.TicketID]*ActiveConn),
 	}
 }
 
@@ -64,6 +67,25 @@ func (r *ConnectionRegistry) Register(conn NoiseConn, accountID account.AccountI
 	return active
 }
 
+func (r *ConnectionRegistry) RegisterPendingQR(ticketID qrlogin.TicketID, conn *ActiveConn) {
+	r.mu.Lock()
+	r.pendingQR[ticketID] = conn
+	r.mu.Unlock()
+}
+
+func (r *ConnectionRegistry) UnregisterPendingQR(ticketID qrlogin.TicketID) {
+	r.mu.Lock()
+	delete(r.pendingQR, ticketID)
+	r.mu.Unlock()
+}
+
+func (r *ConnectionRegistry) GetPendingQR(ticketID qrlogin.TicketID) (*ActiveConn, bool) {
+	r.mu.RLock()
+	conn, ok := r.pendingQR[ticketID]
+	r.mu.RUnlock()
+	return conn, ok
+}
+
 func (r *ConnectionRegistry) Unregister(id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -80,6 +102,11 @@ func (r *ConnectionRegistry) Unregister(id string) {
 		}
 	}
 	delete(r.conns, id)
+	for tid, conn := range r.pendingQR {
+		if conn.ID == id {
+			delete(r.pendingQR, tid)
+		}
+	}
 }
 
 func (r *ConnectionRegistry) Get(id string) (*ActiveConn, bool) {

@@ -10,23 +10,19 @@ import (
 	"github.com/airlance/api/internal/domain/session"
 )
 
-type mockDeviceRepo struct {
+type mockSessionDevRepo struct {
 	devices map[string]device.Device
 }
 
-func (m *mockDeviceRepo) CreateDevice(ctx context.Context, accountID account.AccountID, publicKey []byte) (device.Device, error) {
-	dev := device.Device{
-		ID:        device.DeviceID(10),
-		AccountID: accountID,
-		PublicKey: publicKey,
-		CreatedAt: time.Now(),
-		LastSeen:  time.Now(),
-	}
-	m.devices[string(publicKey)] = dev
+func (m *mockSessionDevRepo) CreateDevice(ctx context.Context, dev device.Device) (device.Device, error) {
+	dev.ID = device.DeviceID(10)
+	dev.FirstSeenAt = time.Now()
+	dev.LastSeenAt = time.Now()
+	m.devices[string(dev.PublicKey)] = dev
 	return dev, nil
 }
 
-func (m *mockDeviceRepo) FindByPublicKey(ctx context.Context, publicKey []byte) (device.Device, error) {
+func (m *mockSessionDevRepo) FindByPublicKey(ctx context.Context, publicKey []byte) (device.Device, error) {
 	dev, ok := m.devices[string(publicKey)]
 	if !ok {
 		return device.Device{}, device.ErrDeviceNotFound
@@ -34,11 +30,27 @@ func (m *mockDeviceRepo) FindByPublicKey(ctx context.Context, publicKey []byte) 
 	return dev, nil
 }
 
-type mockSessionRepo struct {
+func (m *mockSessionDevRepo) FindByFingerprint(ctx context.Context, accountID account.AccountID, fingerprint string) (device.Device, error) {
+	return device.Device{}, device.ErrDeviceNotFound
+}
+
+func (m *mockSessionDevRepo) TouchLastSeen(ctx context.Context, id device.DeviceID) error {
+	return nil
+}
+
+func (m *mockSessionDevRepo) ListByAccount(ctx context.Context, accountID account.AccountID) ([]device.Device, error) {
+	return nil, nil
+}
+
+func (m *mockSessionDevRepo) Revoke(ctx context.Context, id device.DeviceID) error {
+	return nil
+}
+
+type mockSessionSessRepo struct {
 	sessions map[session.SessionID]session.Session
 }
 
-func (m *mockSessionRepo) CreateSession(ctx context.Context, deviceID device.DeviceID, accountID account.AccountID) (session.Session, error) {
+func (m *mockSessionSessRepo) CreateSession(ctx context.Context, deviceID device.DeviceID, accountID account.AccountID) (session.Session, error) {
 	s := session.Session{
 		ID:        "sess_test_123",
 		DeviceID:  deviceID,
@@ -49,7 +61,7 @@ func (m *mockSessionRepo) CreateSession(ctx context.Context, deviceID device.Dev
 	return s, nil
 }
 
-func (m *mockSessionRepo) FindSession(ctx context.Context, id session.SessionID) (session.Session, error) {
+func (m *mockSessionSessRepo) FindSession(ctx context.Context, id session.SessionID) (session.Session, error) {
 	s, ok := m.sessions[id]
 	if !ok {
 		return session.Session{}, session.ErrSessionNotFound
@@ -57,18 +69,38 @@ func (m *mockSessionRepo) FindSession(ctx context.Context, id session.SessionID)
 	return s, nil
 }
 
-func (m *mockSessionRepo) DeleteSession(ctx context.Context, id session.SessionID) error {
+func (m *mockSessionSessRepo) DeleteSession(ctx context.Context, id session.SessionID) error {
 	delete(m.sessions, id)
 	return nil
 }
 
+func (m *mockSessionSessRepo) TouchLastActive(ctx context.Context, id session.SessionID) error {
+	return nil
+}
+
+func (m *mockSessionSessRepo) ListActiveByAccount(ctx context.Context, accountID account.AccountID) ([]session.Session, error) {
+	return nil, nil
+}
+
+func (m *mockSessionSessRepo) Revoke(ctx context.Context, id session.SessionID) error {
+	return nil
+}
+
+func (m *mockSessionSessRepo) RevokeAllByAccount(ctx context.Context, accountID account.AccountID, exceptSessionID *session.SessionID) error {
+	return nil
+}
+
+func (m *mockSessionSessRepo) RevokeInactiveOlderThan(ctx context.Context, cutoff time.Time) (int, error) {
+	return 0, nil
+}
+
 func TestSessionUseCase_NewAndResumeSession(t *testing.T) {
 	ctx := context.Background()
-	devRepo := &mockDeviceRepo{devices: make(map[string]device.Device)}
-	sessRepo := &mockSessionRepo{sessions: make(map[session.SessionID]session.Session)}
+	devRepo := &mockSessionDevRepo{devices: make(map[string]device.Device)}
+	sessRepo := &mockSessionSessRepo{sessions: make(map[session.SessionID]session.Session)}
 
 	pubKey := []byte("device_public_key_32_bytes_long!")
-	_, _ = devRepo.CreateDevice(ctx, 100, pubKey)
+	_, _ = devRepo.CreateDevice(ctx, device.Device{AccountID: 100, PublicKey: pubKey})
 	uc := NewSessionUseCase(sessRepo, devRepo)
 
 	sess, err := uc.NewSession(ctx, pubKey)

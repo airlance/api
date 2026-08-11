@@ -19,7 +19,7 @@ type ConnectionPusher interface {
 
 type MessageUseCase struct {
 	uow     UnitOfWork
-	updates updatelog.Repository // read-only путь для GetDifference
+	updates updatelog.Repository
 	pusher  ConnectionPusher
 }
 
@@ -70,7 +70,6 @@ func (uc *MessageUseCase) SendMessage(
 		return message.Message{}, 0, err
 	}
 
-	// Best-effort push: апдейт уже в логе, поэтому ошибка push некритична.
 	if uc.pusher != nil {
 		if frame, err := encodePushFrame(msg, seq); err == nil {
 			uc.pusher.PushToAccount(recipientID, frame)
@@ -80,8 +79,6 @@ func (uc *MessageUseCase) SendMessage(
 	return msg, seq, nil
 }
 
-// encodeMessageUpdate сериализует Message в MessageUpdate FlatBuffers bytes
-// БЕЗ поля seq_no — seq в payload неизвестен до Append (контракт updatelog.Repository).
 func encodeMessageUpdate(msg message.Message) ([]byte, error) {
 	b := flatbuffers.NewBuilder(256)
 
@@ -93,7 +90,7 @@ func encodeMessageUpdate(msg message.Message) ([]byte, error) {
 	gen.MessageUpdateAddSenderAccountId(b, uint64(msg.SenderAccountID))
 	gen.MessageUpdateAddText(b, textOff)
 	gen.MessageUpdateAddCreatedAt(b, msg.CreatedAt.Unix())
-	// seq_no намеренно не добавляется
+
 	mu := gen.MessageUpdateEnd(b)
 	b.Finish(mu)
 
@@ -103,8 +100,6 @@ func encodeMessageUpdate(msg message.Message) ([]byte, error) {
 	return out, nil
 }
 
-// encodePushFrame пересобирает MessageUpdate + проставляет seq_no из seq.
-// seq_no НЕ берётся из payload (там его нет — см. контракт Append).
 func encodePushFrame(msg message.Message, seq updatelog.Seq) ([]byte, error) {
 	b := flatbuffers.NewBuilder(256)
 

@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	gen "github.com/airlance/api/internal/protocol/generated/Protocol"
+	flatbuffers "github.com/google/flatbuffers/go"
+
 	"github.com/airlance/api/internal/domain/account"
 	"github.com/airlance/api/internal/domain/message"
+	"github.com/airlance/api/internal/domain/updatelog"
 )
 
 type ConnectionPusher interface {
@@ -14,15 +18,17 @@ type ConnectionPusher interface {
 }
 
 type MessageUseCase struct {
-	messages message.Repository
-	pusher   ConnectionPusher
+	uow     UnitOfWork
+	updates updatelog.Repository // read-only путь для GetDifference
+	pusher  ConnectionPusher
 }
 
-func NewMessageUseCase(messages message.Repository, pusher ConnectionPusher) *MessageUseCase {
-	return &MessageUseCase{
-		messages: messages,
-		pusher:   pusher,
-	}
+func NewMessageUseCase(
+	uow UnitOfWork,
+	updates updatelog.Repository,
+	pusher ConnectionPusher,
+) *MessageUseCase {
+	return &MessageUseCase{uow: uow, updates: updates, pusher: pusher}
 }
 
 func (uc *MessageUseCase) SendMessage(
@@ -31,9 +37,9 @@ func (uc *MessageUseCase) SendMessage(
 	recipientID account.AccountID,
 	clientMsgID string,
 	text string,
-) (message.Message, error) {
+) (message.Message, updatelog.Seq, error) {
 	if recipientID == 0 {
-		return message.Message{}, message.ErrInvalidRecipient
+		return message.Message{}, 0, message.ErrInvalidRecipient
 	}
 
 	msgID := message.MessageID(fmt.Sprintf("msg_%d_%d", senderID, time.Now().UnixNano()))
@@ -47,11 +53,89 @@ func (uc *MessageUseCase) SendMessage(
 		CreatedAt:          time.Now(),
 	}
 
-	if uc.messages != nil {
-		if err := uc.messages.SaveMessage(ctx, msg); err != nil {
-			return message.Message{}, err
+	var seq updatelog.Seq
+
+	err := uc.uow.Execute(ctx, func(ctx context.Context, s TxStore) error {
+		if err := s.Messages.SaveMessage(ctx, msg); err != nil {
+			return err
+		}
+		payload, err := encodeMessageUpdate(msg)
+		if err != nil {
+			return err
+		}
+		seq, err = s.Updates.Append(ctx, recipientID, updatelog.KindMessage, payload)
+		return err
+	})
+	if err != nil {
+		return message.Message{}, 0, err
+	}
+
+	// Best-effort push: апдейт уже в логе, поэтому ошибка push некритична.
+	if uc.pusher != nil {
+		if frame, err := encodePushFrame(msg, seq); err == nil {
+			uc.pusher.PushToAccount(recipientID, frame)
 		}
 	}
 
-	return msg, nil
+	return msg, seq, nil
+}
+
+// encodeMessageUpdate сериализует Message в MessageUpdate FlatBuffers bytes
+// БЕЗ поля seq_no — seq в payload неизвестен до Append (контракт updatelog.Repository).
+func encodeMessageUpdate(msg message.Message) ([]byte, error) {
+	b := flatbuffers.NewBuilder(256)
+
+	srvID := b.CreateString(string(msg.ID))
+	textOff := b.CreateString(msg.Text)
+
+	gen.MessageUpdateStart(b)
+	gen.MessageUpdateAddServerMsgId(b, srvID)
+	gen.MessageUpdateAddSenderAccountId(b, uint64(msg.SenderAccountID))
+	gen.MessageUpdateAddText(b, textOff)
+	gen.MessageUpdateAddCreatedAt(b, msg.CreatedAt.Unix())
+	// seq_no намеренно не добавляется
+	mu := gen.MessageUpdateEnd(b)
+	b.Finish(mu)
+
+	raw := b.FinishedBytes()
+	out := make([]byte, len(raw))
+	copy(out, raw)
+	return out, nil
+}
+
+// encodePushFrame пересобирает MessageUpdate + проставляет seq_no из seq.
+// seq_no НЕ берётся из payload (там его нет — см. контракт Append).
+func encodePushFrame(msg message.Message, seq updatelog.Seq) ([]byte, error) {
+	b := flatbuffers.NewBuilder(256)
+
+	srvID := b.CreateString(string(msg.ID))
+	textOff := b.CreateString(msg.Text)
+
+	gen.MessageUpdateStart(b)
+	gen.MessageUpdateAddServerMsgId(b, srvID)
+	gen.MessageUpdateAddSenderAccountId(b, uint64(msg.SenderAccountID))
+	gen.MessageUpdateAddText(b, textOff)
+	gen.MessageUpdateAddCreatedAt(b, msg.CreatedAt.Unix())
+	gen.MessageUpdateAddSeqNo(b, int64(seq))
+	mu := gen.MessageUpdateEnd(b)
+
+	gen.EnvelopeStart(b)
+	gen.EnvelopeAddBodyType(b, gen.BodyMessageUpdate)
+	gen.EnvelopeAddBody(b, mu)
+	env := gen.EnvelopeEnd(b)
+	b.Finish(env)
+
+	raw := b.FinishedBytes()
+	out := make([]byte, len(raw))
+	copy(out, raw)
+	return out, nil
+}
+
+func (uc *MessageUseCase) GetDifference(
+	ctx context.Context,
+	accountID account.AccountID,
+	sinceSeq updatelog.Seq,
+	limit int,
+) ([]updatelog.Update, updatelog.Seq, bool, error) {
+	return uc.updates.ListSince(ctx, accountID, sinceSeq, limit)
 }

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/airlance/api/internal/usecase"
@@ -26,7 +27,7 @@ func (u *UnitOfWork) Execute(ctx context.Context, fn func(ctx context.Context, s
 
 	defer func(tx *sql.Tx) {
 		err := tx.Rollback()
-		if err != nil {
+		if err != nil && !errors.Is(err, sql.ErrTxDone) {
 			fmt.Printf("postgres: rollback failed: %v\n", err)
 		}
 	}(tx)

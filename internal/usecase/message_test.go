@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/airlance/api/internal/domain/account"
@@ -136,4 +137,54 @@ func TestMessageUseCase_GetDifference(t *testing.T) {
 	if hasMore {
 		t.Fatal("expected hasMore = false")
 	}
+}
+
+type failingUpdateLogRepo struct {
+	mockUpdateLogRepo
+}
+
+func (f *failingUpdateLogRepo) Append(ctx context.Context, accountID account.AccountID, kind updatelog.UpdateKind, payload []byte) (updatelog.Seq, error) {
+	return 0, errors.New("append failed")
+}
+
+func TestMessageUseCase_SendMessage_Atomic(t *testing.T) {
+	ctx := context.Background()
+	repo := &mockMessageRepo{msgs: make(map[message.MessageID]message.Message)}
+	failingUpdates := &failingUpdateLogRepo{}
+
+	failingUOW := &mockAtomicUOW{repo: repo, updates: failingUpdates}
+
+	uc := NewMessageUseCase(failingUOW, failingUpdates, nil)
+
+	_, _, err := uc.SendMessage(ctx, account.AccountID(1), account.AccountID(2), "c_msg_atomic", "Atomic Test")
+	if err == nil {
+		t.Fatal("expected SendMessage to fail when Append fails")
+	}
+
+	if len(repo.msgs) != 0 {
+		t.Fatalf("expected 0 messages in repo due to rollback, got %d", len(repo.msgs))
+	}
+}
+
+type mockAtomicUOW struct {
+	repo    message.Repository
+	updates updatelog.Repository
+}
+
+func (u *mockAtomicUOW) Execute(ctx context.Context, fn func(ctx context.Context, s TxStore) error) error {
+	snapshot := make(map[message.MessageID]message.Message)
+	if mRepo, ok := u.repo.(*mockMessageRepo); ok {
+		for k, v := range mRepo.msgs {
+			snapshot[k] = v
+		}
+	}
+
+	err := fn(ctx, TxStore{Messages: u.repo, Updates: u.updates})
+	if err != nil {
+		if mRepo, ok := u.repo.(*mockMessageRepo); ok {
+			mRepo.msgs = snapshot
+		}
+		return err
+	}
+	return nil
 }

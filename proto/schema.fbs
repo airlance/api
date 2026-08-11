@@ -14,6 +14,8 @@ namespace Protocol;
 //  12: SendMessage         — (messaging)
 //  13: SendMessageAck      — (messaging)
 //  14: MessageUpdate       — (messaging)
+//  15: GetDifference       — (updatelog)
+//  16: DifferenceAck      — (updatelog)
 
 union Body {
   Ping,
@@ -30,6 +32,8 @@ union Body {
   SendMessage,
   SendMessageAck,
   MessageUpdate,
+  GetDifference,
+  DifferenceAck,
 }
 
 table Ping {
@@ -50,10 +54,12 @@ table ResumeSession {
 
 table NewSessionAck {
   session_id: string;
+  current_seq: int64;
 }
 
 table ResumeSessionAck {
   session_id: string;
+  current_seq: int64;
 }
 
 table RegisterAccount {
@@ -110,6 +116,17 @@ table MessageUpdate {
   sender_account_id: uint64;
   text: string;
   created_at: int64;
+  seq_no: int64;
+}
+
+table GetDifference {
+  since_seq: int64;
+}
+
+table DifferenceAck {
+  updates: [MessageUpdate];
+  current_seq: int64;
+  has_more: bool;
 }
 
 table Envelope {
@@ -118,3 +135,4 @@ table Envelope {
 }
 
 root_type Envelope;
+

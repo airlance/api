@@ -37,7 +37,7 @@ var migrateDownCmd = &cobra.Command{
 }
 
 func init() {
-	migrateCmd.PersistentFlags().StringVar(&migrateDSN, "dsn", "postgres://postgres:postgres@localhost:5432/messenger?sslmode=disable", "PostgreSQL DSN")
+	migrateCmd.PersistentFlags().StringVar(&migrateDSN, "dsn", "postgres://airlance:airlance@postgres:5432/airlance?sslmode=disable", "PostgreSQL DSN")
 	migrateDownCmd.Flags().IntVar(&migrateDownSteps, "steps", 1, "number of migrations to roll back")
 
 	migrateCmd.AddCommand(migrateUpCmd)

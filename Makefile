@@ -51,6 +51,9 @@ lint: ## Run golangci-lint
 tidy: ## Go mod tidy
 	go mod tidy
 
+test: ## Run tests
+	go test ./...
+
 migrate-up: ## Apply migrations
 	go run $(CMD_DIR) migrate up
 
@@ -64,4 +67,4 @@ keygen: ## Generate keys for development
 	go run $(CMD_DIR) keygen --key-id=v1
 
 zip: ## Archive project
-	COPYFILE_DISABLE=1 zip -r api.zip . -x ".git/*" ".idea/*" ".env" ".env.example" ".gitignore" "app" "server.key" "Makefile" "*.DS_Store" "*/.DS_Store" "__MACOSX/*" "docker-compose.yml" "Dockerfile"
+	COPYFILE_DISABLE=1 zip -r api.zip . -x ".git/*" ".idea/*" ".env" ".env.example" ".gitignore" "app" "internal/protocol/generated/*" "Makefile" "*.DS_Store" "*/.DS_Store" "__MACOSX/*" "docker-compose.yml" "Dockerfile"

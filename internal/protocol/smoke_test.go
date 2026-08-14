@@ -24,9 +24,11 @@ func TestEnvelopePingRoundtrip(t *testing.T) {
 	buf := b.FinishedBytes()
 
 	decoded := gen.GetRootAsEnvelope(buf, 0)
+
 	if decoded.RequestId() != 42 {
 		t.Fatalf("expected request_id 42, got %d", decoded.RequestId())
 	}
+
 	if decoded.BodyType() != gen.BodyPing {
 		t.Fatalf("expected body type Ping")
 	}

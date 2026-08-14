@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/airlance/api/internal/config"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -37,7 +38,7 @@ var migrateDownCmd = &cobra.Command{
 }
 
 func init() {
-	migrateCmd.PersistentFlags().StringVar(&migrateDSN, "dsn", "postgres://airlance:airlance@postgres:5432/airlance?sslmode=disable", "PostgreSQL DSN")
+	migrateCmd.PersistentFlags().StringVar(&migrateDSN, "dsn", "", "PostgreSQL DSN (overrides DB_DSN from config)")
 	migrateDownCmd.Flags().IntVar(&migrateDownSteps, "steps", 1, "number of migrations to roll back")
 
 	migrateCmd.AddCommand(migrateUpCmd)
@@ -45,7 +46,16 @@ func init() {
 }
 
 func getMigrator() (*migrate.Migrate, error) {
-	m, err := migrate.New("file://migrations/postgres", migrateDSN)
+	dsn := migrateDSN
+	if dsn == "" {
+		cfg, err := config.Load()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load config: %w", err)
+		}
+		dsn = cfg.Database.DSN
+	}
+
+	m, err := migrate.New("file://migrations/postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize migrator: %w", err)
 	}

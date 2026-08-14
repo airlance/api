@@ -318,7 +318,10 @@ func newHandler(
 				if err != nil {
 					logger.FromContext(reqCtx).WithField("error", err).Warn("NewSession failed")
 					_ = writeError(conn, env.RequestId(), gen.ErrorCodeSESSION_NOT_FOUND, err.Error())
-					return
+					// SESSION_NOT_FOUND is an expected response for a new device.
+					// Keep the Noise connection alive so the client can continue
+					// with email OTP registration on the same transport.
+					continue
 				}
 				currentAccountID = sess.AccountID
 				currentSessionID = sess.ID
@@ -352,7 +355,9 @@ func newHandler(
 				if err != nil {
 					logger.FromContext(reqCtx).WithField("error", err).Warn("ResumeSession failed")
 					_ = writeError(conn, env.RequestId(), gen.ErrorCodeSESSION_NOT_FOUND, err.Error())
-					return
+					// The client may fall back to NewSession or email OTP after a
+					// missing/expired session; preserve the authenticated transport.
+					continue
 				}
 				currentAccountID = sess.AccountID
 				currentSessionID = sess.ID

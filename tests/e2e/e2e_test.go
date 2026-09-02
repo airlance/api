@@ -48,6 +48,9 @@ func (m *inMemorySessionRepo) GetByID(ctx context.Context, id uuid.UUID) (*sessi
 	}
 	return nil, session.ErrNotFound
 }
+func (m *inMemorySessionRepo) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*session.Session, error) {
+	return nil, nil
+}
 func (m *inMemorySessionRepo) Revoke(ctx context.Context, tokenHash []byte) error { return nil }
 func (m *inMemorySessionRepo) RevokeByID(ctx context.Context, id uuid.UUID) error { return nil }
 func (m *inMemorySessionRepo) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {

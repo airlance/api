@@ -38,7 +38,7 @@ func TestRedisEventBus_RealRedisTwoInstanceRevocations(t *testing.T) {
 	}
 
 	log := logger.New("error", "json")
-	routerB := ws.NewRouter(1, 1)
+	routerB := ws.NewRouter(1, 1, nil, nil)
 	registryB := ws.NewConnectionRegistry()
 	ticketRepoB := &mockTicketRepo{}
 	sessionRepoB := &mockSessionRepo{}

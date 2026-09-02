@@ -7,6 +7,7 @@ import (
 	"airlance.org/api/internal/domain/audit"
 	"airlance.org/api/internal/domain/device"
 	"airlance.org/api/internal/domain/identity"
+	"airlance.org/api/internal/domain/otp"
 	"airlance.org/api/internal/domain/passkey"
 	"airlance.org/api/internal/domain/session"
 	"airlance.org/api/internal/domain/user"
@@ -24,6 +25,7 @@ type Repositories struct {
 	APIClient     apiclient.Repository
 	RateLimitTier apiclient.TierRepository
 	WSTicket      wsticket.Repository
+	OTP           otp.Repository
 }
 
 func InitRepositories(infra *Infrastructures) *Repositories {
@@ -38,5 +40,6 @@ func InitRepositories(infra *Infrastructures) *Repositories {
 		APIClient:     postgres.NewAPIClientRepository(infra.DBPool),
 		RateLimitTier: postgres.NewRateLimitTierRepository(infra.DBPool),
 		WSTicket:      redis.NewWSTicketRepository(infra.RedisClient),
+		OTP:           postgres.NewOTPRepository(infra.DBPool),
 	}
 }

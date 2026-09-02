@@ -40,6 +40,12 @@ func TestRedisOutage_FailClosedProtection(t *testing.T) {
 		limiter,
 		nil,
 		keyRing,
+		nil,
+		nil,
+		keyRing,
+		6,
+		10*time.Minute,
+		5,
 	)
 
 	_, err := authUC.BeginSignup(context.Background(), "192.168.1.1")
@@ -89,6 +95,12 @@ func TestAuthRateLimit_Exceeded(t *testing.T) {
 		limiter,
 		nil,
 		keyRing,
+		nil,
+		nil,
+		keyRing,
+		6,
+		10*time.Minute,
+		5,
 	)
 
 	_, err := authUC.BeginSignup(context.Background(), "192.168.1.1")

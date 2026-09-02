@@ -17,6 +17,8 @@ const (
 	EventDeviceRevoked     = "device.revoked"
 	EventClientCreated     = "apiclient.created"
 	EventClientRevoked     = "apiclient.revoked"
+	EventAuthOTPRequested  = "auth.otp.requested"
+	EventAuthEmailLinked   = "auth.email.linked"
 )
 
 type Event struct {

@@ -73,11 +73,11 @@ fmt: ## gofmt every tracked Go file
 	gofmt -l -w .
 
 .PHONY: vet
-vet: ## go vet ./...
+vet:  ## Vet code
 	go vet ./...
 
 .PHONY: test
-test: ## go test ./...
+test: ## Run Go tests
 	go test ./...
 
 .PHONY: lint
@@ -94,3 +94,8 @@ agent-check: ## Run read-only checks with an agent-safe writable Go cache
 .PHONY: clean
 clean: ## Remove build/test artifacts
 	rm -rf dist coverage.out coverage.html .gocache
+
+.PHONY: zip
+zip: ## Archive api project
+	COPYFILE_DISABLE=1 zip -r api.zip . -x ".git/*" ".idea/*" ".env" "Makefile" "*.DS_Store" "*/.DS_Store" "__MACOSX/*"
+

@@ -20,6 +20,7 @@ type Session struct {
 	UserID     uuid.UUID
 	IdentityID uuid.UUID
 	DeviceID   *uuid.UUID
+	Platform   string
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
 	RevokedAt  *time.Time

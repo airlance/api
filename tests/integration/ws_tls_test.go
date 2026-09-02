@@ -47,6 +47,9 @@ func (m *mockSessionRepo) GetValid(ctx context.Context, tokenHash []byte) (*sess
 func (m *mockSessionRepo) GetByID(ctx context.Context, id uuid.UUID) (*session.Session, error) {
 	return &session.Session{ID: id, UserID: uuid.New(), ExpiresAt: time.Now().Add(1 * time.Hour)}, nil
 }
+func (m *mockSessionRepo) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*session.Session, error) {
+	return nil, nil
+}
 func (m *mockSessionRepo) Revoke(ctx context.Context, tokenHash []byte) error { return nil }
 func (m *mockSessionRepo) RevokeByID(ctx context.Context, id uuid.UUID) error { return nil }
 func (m *mockSessionRepo) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {
@@ -99,7 +102,7 @@ func TestWebSocket_TLS_And_TrustedProxy_Enforcement(t *testing.T) {
 	sessionRepo := &mockSessionRepo{}
 	deviceRepo := &mockDeviceRepo{}
 	registry := ws.NewConnectionRegistry()
-	router := ws.NewRouter(1, 1)
+	router := ws.NewRouter(1, 1, nil, nil)
 	log := logger.New("error", "json")
 
 	server := ws.NewServer(ticketRepo, sessionRepo, deviceRepo, nil, nil, registry, router, nil, cfg, log)

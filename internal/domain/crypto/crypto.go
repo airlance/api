@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 )
 
 type KeyRing struct {
@@ -48,4 +49,33 @@ func ComputeKeyRingHMAC(data []byte, ring KeyRing) ([]byte, uint16, error) {
 		return nil, 0, errors.New("crypto: current key not found in key ring")
 	}
 	return ComputeHMAC(data, key), ring.CurrentKeyID, nil
+}
+
+func GenerateNumericCode(digits int, ring KeyRing) (code string, hash []byte, keyID uint16, err error) {
+	if digits <= 0 {
+		return "", nil, 0, errors.New("crypto: digits must be positive")
+	}
+	buf := make([]byte, digits)
+	for i := 0; i < digits; i++ {
+		n, err := rand.Int(rand.Reader, big.NewInt(10))
+		if err != nil {
+			return "", nil, 0, fmt.Errorf("crypto: rand int failed: %w", err)
+		}
+		buf[i] = byte('0' + n.Int64())
+	}
+	code = string(buf)
+	hash, keyID, err = ComputeKeyRingHMAC([]byte(code), ring)
+	if err != nil {
+		return "", nil, 0, err
+	}
+	return code, hash, keyID, nil
+}
+
+func VerifyNumericCode(code string, storedHash []byte, keyID uint16, ring KeyRing) bool {
+	key, ok := ring.Keys[keyID]
+	if !ok || len(key) == 0 {
+		return false
+	}
+	computed := ComputeHMAC([]byte(code), key)
+	return ConstantTimeCompareBytes(computed, storedHash)
 }

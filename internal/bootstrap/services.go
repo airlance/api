@@ -35,6 +35,12 @@ func InitServices(cfg *config.Config, infra *Infrastructures, repos *Repositorie
 		infra.Limiter,
 		infra.EventBus,
 		cfg.DeviceHMACKeyRing,
+		repos.OTP,
+		infra.Mailer,
+		cfg.OTPHMACKeyRing,
+		cfg.OTPCodeLength,
+		cfg.OTPTTL,
+		cfg.OTPMaxAttempts,
 	)
 
 	apiAuthKeyRing := apiauth.KeyRing{

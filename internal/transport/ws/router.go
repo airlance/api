@@ -9,6 +9,8 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 
 	fbWS "airlance.org/api/internal/transport/ws/airlance/ws"
+	"airlance.org/api/internal/usecase/auth"
+	sessionUC "airlance.org/api/internal/usecase/session"
 )
 
 var (
@@ -21,17 +23,25 @@ type Router struct {
 	handlers             map[fbWS.Payload]Handler
 	minSupportedProtocol uint32
 	currentProtocol      uint32
+	authUC               *auth.Usecase
+	sessionUC            *sessionUC.Usecase
 }
 
-func NewRouter(minProtocol, currentProtocol uint32) *Router {
+func NewRouter(minProtocol, currentProtocol uint32, authUC *auth.Usecase, sessionUC *sessionUC.Usecase) *Router {
 	r := &Router{
 		handlers:             make(map[fbWS.Payload]Handler),
 		minSupportedProtocol: minProtocol,
 		currentProtocol:      currentProtocol,
+		authUC:               authUC,
+		sessionUC:            sessionUC,
 	}
 
 	r.Register(fbWS.PayloadPing, r.handlePing)
 	r.Register(fbWS.PayloadTestEcho, r.handleTestEcho)
+	r.Register(fbWS.PayloadOtpLinkEmailRequest, r.handleOTPLinkEmailRequest)
+	r.Register(fbWS.PayloadOtpLinkEmailVerify, r.handleOTPLinkEmailVerify)
+	r.Register(fbWS.PayloadSessionListRequest, r.handleSessionList)
+	r.Register(fbWS.PayloadLogoutRequest, r.handleLogout)
 
 	return r
 }

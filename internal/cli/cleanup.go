@@ -37,6 +37,7 @@ func newCleanupCmd() *cobra.Command {
 
 			sessionRepo := postgres.NewSessionRepository(pool)
 			challengeRepo := postgres.NewChallengeRepository(pool)
+			otpRepo := postgres.NewOTPRepository(pool)
 
 			cutoff := time.Now().Add(-maxAge)
 
@@ -54,7 +55,14 @@ func newCleanupCmd() *cobra.Command {
 				log.Info("Cleaned up expired sessions", "count", cleanedSessions)
 			}
 
-			fmt.Printf("Cleanup completed: %d challenges, %d sessions purged.\n", cleanedChallenges, cleanedSessions)
+			cleanedOTPs, err := otpRepo.CleanupExpired(ctx, cutoff)
+			if err != nil {
+				log.Error(err, "Failed to cleanup expired OTP codes")
+			} else {
+				log.Info("Cleaned up expired OTP codes", "count", cleanedOTPs)
+			}
+
+			fmt.Printf("Cleanup completed: %d challenges, %d sessions, %d OTP codes purged.\n", cleanedChallenges, cleanedSessions, cleanedOTPs)
 			return nil
 		},
 	}

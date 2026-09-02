@@ -36,7 +36,7 @@ func TestWebSocket_GracefulDrainingShutdown(t *testing.T) {
 	sessionRepo := &mockSessionRepo{}
 	deviceRepo := &mockDeviceRepo{}
 	registry := ws.NewConnectionRegistry()
-	router := ws.NewRouter(1, 1)
+	router := ws.NewRouter(1, 1, nil, nil)
 	log := logger.New("error", "json")
 
 	server := ws.NewServer(ticketRepo, sessionRepo, deviceRepo, nil, nil, registry, router, nil, cfg, log)

@@ -114,6 +114,9 @@ func (d *dummySessionRepo) GetValid(ctx context.Context, tokenHash []byte) (*ses
 func (d *dummySessionRepo) GetByID(ctx context.Context, id uuid.UUID) (*session.Session, error) {
 	return nil, nil
 }
+func (d *dummySessionRepo) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*session.Session, error) {
+	return nil, nil
+}
 func (d *dummySessionRepo) Revoke(ctx context.Context, tokenHash []byte) error { return nil }
 func (d *dummySessionRepo) RevokeByID(ctx context.Context, id uuid.UUID) error { return nil }
 func (d *dummySessionRepo) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {
@@ -165,6 +168,12 @@ func TestAuth_FailClosedOnLimiterOutage(t *testing.T) {
 		limiter,
 		nil,
 		keyRing,
+		nil,
+		nil,
+		keyRing,
+		6,
+		10*time.Minute,
+		5,
 	)
 
 	_, err := authUC.BeginSignup(context.Background(), "127.0.0.1")

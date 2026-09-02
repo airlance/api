@@ -11,6 +11,7 @@ type Repository interface {
 	Create(ctx context.Context, s *Session) error
 	GetValid(ctx context.Context, tokenHash []byte) (*Session, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*Session, error)
+	ListByUserID(ctx context.Context, userID uuid.UUID) ([]*Session, error)
 	Revoke(ctx context.Context, tokenHash []byte) error
 	RevokeByID(ctx context.Context, id uuid.UUID) error
 	RevokeAllForUser(ctx context.Context, userID uuid.UUID) error

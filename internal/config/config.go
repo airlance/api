@@ -64,6 +64,10 @@ type Config struct {
 	APITokenTTL             time.Duration
 	DeviceHMACKeyRing       KeyRing
 	AuditSubjectHMACKeyRing KeyRing
+	OTPHMACKeyRing          KeyRing
+	OTPCodeLength           int
+	OTPTTL                  time.Duration
+	OTPMaxAttempts          int
 	JWTKeyRing              Ed25519KeyRing
 	WireauthPrivateKey      *rsa.PrivateKey
 	WireauthPrivateKeyPath  string
@@ -117,6 +121,9 @@ func LoadFromEnv() (*Config, error) {
 		SessionTTL:              getEnvDuration("SESSION_TTL", 30*24*time.Hour),
 		WSTicketTTL:             getEnvDuration("WS_TICKET_TTL", 30*time.Second),
 		APITokenTTL:             getEnvDuration("API_TOKEN_TTL", 15*time.Minute),
+		OTPCodeLength:           getEnvInt("OTP_CODE_LENGTH", 6),
+		OTPTTL:                  getEnvDuration("OTP_TTL", 10*time.Minute),
+		OTPMaxAttempts:          getEnvInt("OTP_MAX_ATTEMPTS", 5),
 		MaxHTTPBodyBytes:        getEnvInt64("MAX_HTTP_BODY_BYTES", 2*1024*1024), // 2MB
 		MaxWSFrameBytes:         getEnvInt64("MAX_WS_FRAME_BYTES", 64*1024),      // 64KB
 		MaxWSConnections:        getEnvInt("MAX_WS_CONNECTIONS", 10000),
@@ -130,7 +137,7 @@ func LoadFromEnv() (*Config, error) {
 		WSHandshakeTimeout:      getEnvDuration("WS_HANDSHAKE_TIMEOUT", 5*time.Second),
 		WSIdleTimeout:           getEnvDuration("WS_IDLE_TIMEOUT", 60*time.Second),
 		MinSupportedProtocol:    uint32(getEnvInt("MIN_SUPPORTED_PROTOCOL", 1)),
-		CurrentProtocol:         uint32(getEnvInt("CURRENT_PROTOCOL", 1)),
+		CurrentProtocol:         uint32(getEnvInt("CURRENT_PROTOCOL", 2)),
 	}
 
 	proxiesStr := getEnv("TRUSTED_PROXIES", "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
@@ -164,6 +171,16 @@ func LoadFromEnv() (*Config, error) {
 		return nil, fmt.Errorf("%w: invalid audit subject HMAC keys: %v", ErrInvalidConfig, err)
 	}
 	cfg.AuditSubjectHMACKeyRing = auditRing
+
+	otpDefault := ""
+	if isDevOrTest {
+		otpDefault = "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	}
+	otpRing, err := parseHMACKeyRing("OTP_HMAC_KEYS", "OTP_HMAC_CURRENT_KEY_ID", otpDefault, 1, isDevOrTest)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid OTP HMAC keys: %v", ErrInvalidConfig, err)
+	}
+	cfg.OTPHMACKeyRing = otpRing
 
 	jwtRing, err := parseEd25519KeyRing(isDevOrTest)
 	if err != nil {

@@ -35,12 +35,62 @@ table TestEcho {
     data: string;
 }
 
+table OtpLinkEmailRequest {
+    email: string;
+}
+
+table OtpLinkEmailAck {
+    request_id: string;
+    expires_at_ms: ulong; // unix millis
+}
+
+table OtpLinkEmailVerify {
+    request_id: string;
+    code: string;
+}
+
+table OtpLinkEmailVerified {
+    identity_id: string;
+    email: string;
+    linked_at_ms: ulong;
+}
+
+table SessionListRequest {}
+
+table SessionInfo {
+    session_id: string;
+    device_id: string;   // empty if session has no device
+    platform: string;    // empty if unknown
+    ip: string;
+    created_at_ms: ulong;
+    expires_at_ms: ulong;
+    is_current: bool;    // true for the session opening this socket
+}
+
+table SessionListResponse {
+    sessions: [SessionInfo];
+}
+
+table LogoutRequest {}
+
+table LogoutResponse {
+    session_id: string;
+}
+
 union Payload {
     Ping,
     Pong,
     Error,
     Empty,
-    TestEcho
+    TestEcho,
+    OtpLinkEmailRequest,
+    OtpLinkEmailAck,
+    OtpLinkEmailVerify,
+    OtpLinkEmailVerified,
+    SessionListRequest,
+    SessionListResponse,
+    LogoutRequest,
+    LogoutResponse
 }
 
 table Envelope {

@@ -1,11 +1,15 @@
 package auth
 
 import (
+	"time"
+
 	"airlance.org/api/internal/domain/audit"
 	"airlance.org/api/internal/domain/crypto"
 	"airlance.org/api/internal/domain/device"
 	"airlance.org/api/internal/domain/eventbus"
 	"airlance.org/api/internal/domain/identity"
+	"airlance.org/api/internal/domain/mailer"
+	"airlance.org/api/internal/domain/otp"
 	"airlance.org/api/internal/domain/passkey"
 	"airlance.org/api/internal/domain/ratelimit"
 	"airlance.org/api/internal/domain/tx"
@@ -26,6 +30,12 @@ type Usecase struct {
 	limiter           ratelimit.Limiter
 	eventBus          eventbus.EventBus
 	deviceHMACKeyRing crypto.KeyRing
+	otpRepo           otp.Repository
+	mailer            mailer.Sender
+	otpHMACKeyRing    crypto.KeyRing
+	otpCodeLength     int
+	otpTTL            time.Duration
+	otpMaxAttempts    int
 }
 
 func NewUsecase(
@@ -41,7 +51,22 @@ func NewUsecase(
 	limiter ratelimit.Limiter,
 	eventBus eventbus.EventBus,
 	deviceHMACKeyRing crypto.KeyRing,
+	otpRepo otp.Repository,
+	mailer mailer.Sender,
+	otpHMACKeyRing crypto.KeyRing,
+	otpCodeLength int,
+	otpTTL time.Duration,
+	otpMaxAttempts int,
 ) *Usecase {
+	if otpCodeLength <= 0 {
+		otpCodeLength = 6
+	}
+	if otpTTL <= 0 {
+		otpTTL = 10 * time.Minute
+	}
+	if otpMaxAttempts <= 0 {
+		otpMaxAttempts = 5
+	}
 	return &Usecase{
 		userRepo:          userRepo,
 		identityRepo:      identityRepo,
@@ -55,5 +80,11 @@ func NewUsecase(
 		limiter:           limiter,
 		eventBus:          eventBus,
 		deviceHMACKeyRing: deviceHMACKeyRing,
+		otpRepo:           otpRepo,
+		mailer:            mailer,
+		otpHMACKeyRing:    otpHMACKeyRing,
+		otpCodeLength:     otpCodeLength,
+		otpTTL:            otpTTL,
+		otpMaxAttempts:    otpMaxAttempts,
 	}
 }

@@ -81,6 +81,35 @@ func (r *SessionRepository) GetByID(ctx context.Context, id uuid.UUID) (*session
 	return &s, nil
 }
 
+func (r *SessionRepository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*session.Session, error) {
+	exec := database.GetExecutor(ctx, r.pool)
+	query := `
+		SELECT s.id, s.token_hash, s.user_id, s.identity_id, s.device_id, COALESCE(d.platform, ''), s.created_at, s.expires_at, s.revoked_at
+		FROM sessions s
+		LEFT JOIN devices d ON s.device_id = d.id
+		WHERE s.user_id = $1 AND s.revoked_at IS NULL AND s.expires_at > NOW()
+		ORDER BY s.created_at DESC
+	`
+	rows, err := exec.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("session_repo: list by user id query failed: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []*session.Session
+	for rows.Next() {
+		var s session.Session
+		if err := rows.Scan(&s.ID, &s.TokenHash, &s.UserID, &s.IdentityID, &s.DeviceID, &s.Platform, &s.CreatedAt, &s.ExpiresAt, &s.RevokedAt); err != nil {
+			return nil, fmt.Errorf("session_repo: list by user id scan failed: %w", err)
+		}
+		sessions = append(sessions, &s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("session_repo: list by user id rows error: %w", err)
+	}
+	return sessions, nil
+}
+
 func (r *SessionRepository) Revoke(ctx context.Context, tokenHash []byte) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `UPDATE sessions SET revoked_at = NOW() WHERE token_hash = $1 AND revoked_at IS NULL`

@@ -64,6 +64,9 @@ func (m *testSessionRepo) GetValid(ctx context.Context, tokenHash []byte) (*sess
 func (m *testSessionRepo) GetByID(ctx context.Context, id uuid.UUID) (*session.Session, error) {
 	return nil, nil
 }
+func (m *testSessionRepo) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*session.Session, error) {
+	return nil, nil
+}
 func (m *testSessionRepo) Revoke(ctx context.Context, tokenHash []byte) error { return nil }
 func (m *testSessionRepo) RevokeByID(ctx context.Context, id uuid.UUID) error { return nil }
 func (m *testSessionRepo) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {

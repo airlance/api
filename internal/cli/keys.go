@@ -35,11 +35,11 @@ func newKeysHMACCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "hmac",
-		Short: "Generate one DEVICE_HMAC_KEYS / AUDIT_HMAC_KEYS entry",
+		Short: "Generate one DEVICE_HMAC_KEYS / AUDIT_HMAC_KEYS / OTP_HMAC_KEYS entry",
 		Long: "Generates a random 32-byte HMAC key, hex-encoded, in the " +
 			"\"id:secret\" form parsed by config.parseHMACKeyRing. Run it " +
-			"twice for a fresh deployment: once for DEVICE_HMAC_KEYS and " +
-			"once for AUDIT_HMAC_KEYS. Never reuse the same key for both.",
+			"for a fresh deployment: for DEVICE_HMAC_KEYS, " +
+			"AUDIT_HMAC_KEYS, and OTP_HMAC_KEYS. Never reuse the same key for multiple purposes.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			entry, err := generateHMACEntry(id)
 			if err != nil {
@@ -128,6 +128,10 @@ func newKeysAllCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("audit HMAC key: %w", err)
 			}
+			otpEntry, err := generateHMACEntry(1)
+			if err != nil {
+				return fmt.Errorf("OTP HMAC key: %w", err)
+			}
 			jwtEntry, _, err := generateJWTEntry("key-1")
 			if err != nil {
 				return fmt.Errorf("JWT key: %w", err)
@@ -144,6 +148,8 @@ func newKeysAllCmd() *cobra.Command {
 			fmt.Println("DEVICE_HMAC_CURRENT_KEY_ID=1")
 			fmt.Printf("AUDIT_HMAC_KEYS=%s\n", auditEntry)
 			fmt.Println("AUDIT_HMAC_CURRENT_KEY_ID=1")
+			fmt.Printf("OTP_HMAC_KEYS=%s\n", otpEntry)
+			fmt.Println("OTP_HMAC_CURRENT_KEY_ID=1")
 			fmt.Printf("JWT_ED25519_KEYS=%s\n", jwtEntry)
 			fmt.Println("JWT_CURRENT_KID=key-1")
 			fmt.Printf("WIREAUTH_RSA_KEY_PATH=%s\n", wireauthOut)

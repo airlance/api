@@ -108,21 +108,21 @@ environment, generate fresh values instead of hand-editing the file:
 
 ```bash
 make keys                # prints a full DEVICE_HMAC_KEYS/AUDIT_HMAC_KEYS/
-                          # JWT_ED25519_KEYS set and writes
+                          # OTP_HMAC_KEYS/JWT_ED25519_KEYS set and writes
                           # wireauth_private_key.pem
 ```
 
 or generate/rotate one key at a time:
 
 ```bash
-make keys-hmac ARGS="--id 2"          # DEVICE_HMAC_KEYS / AUDIT_HMAC_KEYS entry
+make keys-hmac ARGS="--id 2"          # DEVICE_HMAC_KEYS / AUDIT_HMAC_KEYS / OTP_HMAC_KEYS entry
 make keys-jwt ARGS="--kid key-2"      # JWT_ED25519_KEYS entry
 make keys-wireauth ARGS="--out wireauth_private_key.pem"
 ```
 
 Treat the output as a secret: pipe it into your secret manager rather than
 committing it, and never reuse a DEVICE_HMAC_KEYS value for
-AUDIT_HMAC_KEYS or vice versa. `JWT_ED25519_KEYS` and `WIREAUTH_RSA_KEY_PATH`
+AUDIT_HMAC_KEYS, OTP_HMAC_KEYS or vice versa. `JWT_ED25519_KEYS` and `WIREAUTH_RSA_KEY_PATH`
 (or `WIREAUTH_RSA_KEY_PEM`) are required — config load fails fast if either
 is missing — once `APP_ENV` is anything other than `development`/`test`.
 

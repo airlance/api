@@ -28,7 +28,7 @@ func InitHandlers(cfg *config.Config, infra *Infrastructures, repos *Repositorie
 	meHandlers := v1.NewMeHandlers(infra.Limiter)
 
 	wsRegistry := ws.NewConnectionRegistry()
-	wsRouter := ws.NewRouter(cfg.MinSupportedProtocol, cfg.CurrentProtocol)
+	wsRouter := ws.NewRouter(cfg.MinSupportedProtocol, cfg.CurrentProtocol, services.Auth, services.Session)
 	wsServer := ws.NewServer(
 		repos.WSTicket,
 		repos.Session,

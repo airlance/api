@@ -1,2 +1,17 @@
-/internal/protocol/generated/
+# Local environment / secrets
 .env
+*.pem
+*_private_key*
+wireauth_private_key.pem
+
+# Build output
+dist/
+airlance-api
+
+# Test/coverage artifacts
+coverage.out
+coverage.html
+
+# Editor/IDE
+.idea/
+.vscode/

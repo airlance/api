@@ -1,4 +1,3 @@
-// Package webauthn wraps go-webauthn/webauthn and provides type adaptation for passkey authentication ceremonies.
 package webauthn
 
 import (
@@ -19,19 +18,15 @@ import (
 )
 
 var (
-	// ErrNilWebAuthn is returned when WebAuthn is not initialized.
 	ErrNilWebAuthn = errors.New("webauthn: uninitialized engine")
 )
 
-// Engine wraps go-webauthn.WebAuthn and implements passkey.WebAuthnService.
 type Engine struct {
 	w *gowebauthn.WebAuthn
 }
 
-// Ensure Engine implements passkey.WebAuthnService.
 var _ passkey.WebAuthnService = (*Engine)(nil)
 
-// NewEngine constructs a WebAuthn Engine from config.
 func NewEngine(cfg *config.Config) (*Engine, error) {
 	w, err := gowebauthn.New(&gowebauthn.Config{
 		RPDisplayName: cfg.WebAuthnRPDisplayName,
@@ -44,28 +39,23 @@ func NewEngine(cfg *config.Config) (*Engine, error) {
 	return &Engine{w: w}, nil
 }
 
-// WebAuthnUser adapts domain User & credentials to the go-webauthn User interface.
 type WebAuthnUser struct {
 	User        *user.User
 	Credentials []*passkey.Credential
 }
 
-// WebAuthnID returns the user's UUID as byte slice.
 func (u *WebAuthnUser) WebAuthnID() []byte {
 	return u.User.ID[:]
 }
 
-// WebAuthnName returns the user ID string.
 func (u *WebAuthnUser) WebAuthnName() string {
 	return u.User.ID.String()
 }
 
-// WebAuthnDisplayName returns the user ID string.
 func (u *WebAuthnUser) WebAuthnDisplayName() string {
 	return u.User.ID.String()
 }
 
-// WebAuthnCredentials returns the slice of registered WebAuthn credentials.
 func (u *WebAuthnUser) WebAuthnCredentials() []gowebauthn.Credential {
 	res := make([]gowebauthn.Credential, 0, len(u.Credentials))
 	for _, c := range u.Credentials {
@@ -97,12 +87,10 @@ func (u *WebAuthnUser) WebAuthnCredentials() []gowebauthn.Credential {
 	return res
 }
 
-// WebAuthnIcon returns an optional icon URL.
 func (u *WebAuthnUser) WebAuthnIcon() string {
 	return ""
 }
 
-// BeginRegistration implements passkey.WebAuthnService.
 func (e *Engine) BeginRegistration(u *user.User, existingCreds []*passkey.Credential) ([]byte, []byte, error) {
 	if e == nil || e.w == nil {
 		return nil, nil, ErrNilWebAuthn
@@ -129,7 +117,6 @@ func (e *Engine) BeginRegistration(u *user.User, existingCreds []*passkey.Creden
 	return creationJSON, sessionBytes, nil
 }
 
-// FinishRegistration implements passkey.WebAuthnService.
 func (e *Engine) FinishRegistration(u *user.User, existingCreds []*passkey.Credential, sessionData []byte, responsePayload []byte) (*passkey.VerifiedCredential, error) {
 	if e == nil || e.w == nil {
 		return nil, ErrNilWebAuthn
@@ -178,7 +165,6 @@ func (e *Engine) FinishRegistration(u *user.User, existingCreds []*passkey.Crede
 	}, nil
 }
 
-// BeginLogin implements passkey.WebAuthnService.
 func (e *Engine) BeginLogin() ([]byte, []byte, error) {
 	if e == nil || e.w == nil {
 		return nil, nil, ErrNilWebAuthn
@@ -203,7 +189,6 @@ func (e *Engine) BeginLogin() ([]byte, []byte, error) {
 	return assertionJSON, sessionBytes, nil
 }
 
-// FinishLogin implements passkey.WebAuthnService.
 func (e *Engine) FinishLogin(ctx context.Context, sessionData []byte, responsePayload []byte, lookup passkey.UserLookupFunc) (*passkey.VerifiedCredential, *user.User, error) {
 	if e == nil || e.w == nil {
 		return nil, nil, ErrNilWebAuthn

@@ -167,7 +167,6 @@ func TestAuth_FailClosedOnLimiterOutage(t *testing.T) {
 		keyRing,
 	)
 
-	// In fail-closed policy, when rate limiter is unreachable, authentication initiation must fail
 	_, err := authUC.BeginSignup(context.Background(), "127.0.0.1")
 	if err == nil {
 		t.Errorf("expected fail-closed error when limiter is down, got nil")

@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Repository defines storage operations for identities.
 type Repository interface {
 	Create(ctx context.Context, ident *Identity) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Identity, error)
@@ -15,7 +14,6 @@ type Repository interface {
 	MarkVerified(ctx context.Context, id uuid.UUID) error
 }
 
-// AuthProvider defines the interface implemented by specific authentication mechanisms.
 type AuthProvider interface {
 	Kind() Kind
 }

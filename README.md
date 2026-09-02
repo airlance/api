@@ -54,21 +54,22 @@ framework, reflection container, or mutable global application state.
 ## Local development
 
 You need Go (declared in `go.mod`), Docker Compose, PostgreSQL, and Redis.
-The shortest local setup is:
+The shortest local setup, using the `Makefile`:
 
 ```bash
 cp .env.example .env
-docker compose up -d postgres redis
+make dev-up                    # start local Postgres and Redis
 set -a && source .env && set +a
-go run ./cmd/main migrate up
-go run ./cmd/main serve
+make migrate-up
+make run
 ```
 
-The application reads process environment variables. `.env` is therefore a
-local shell convenience file, not an application configuration source: load it
-as shown above (or configure your IDE to do so). It is ignored by Git; copy
-`.env.example` when you need a fresh local configuration. Do not use `.env` or
-its development values in production.
+`.env` is a local shell convenience file, not an application configuration
+source: the process reads environment variables directly, so `.env` must be
+loaded into the shell (as above) or your IDE's run configuration. It is
+git-ignored; copy `.env.example` again whenever you need a fresh local file.
+Never use `.env` or its committed dev-only secret values outside
+`APP_ENV=development`/`test` (see Security below).
 
 The service listens on `http://localhost:8080` by default. Check readiness:
 
@@ -76,13 +77,42 @@ The service listens on `http://localhost:8080` by default. Check readiness:
 curl http://localhost:8080/readyz
 ```
 
-The CLI provides `serve`, `version`, `cleanup`, and `migrate {up,down,reset,version,create}`:
+Run `make help` for the full target list. The CLI underneath also exposes
+`serve`, `version`, `cleanup`, `keys {hmac,jwt,wireauth,all}`, and
+`migrate {up,down,reset,version,create}` directly:
 
 ```bash
 go run ./cmd/main migrate create add_something
 go run ./cmd/main migrate down --steps 1
 go run ./cmd/main cleanup --max-age 24h
 ```
+
+### Generating secrets
+
+`.env.example` ships with the same fixed dev-only key material that
+`config.go` already falls back to under `APP_ENV=development`/`test` — fine
+for a laptop, never for anything reachable outside it. For any other
+environment, generate fresh values instead of hand-editing the file:
+
+```bash
+make keys                # prints a full DEVICE_HMAC_KEYS/AUDIT_HMAC_KEYS/
+                          # JWT_ED25519_KEYS set and writes
+                          # wireauth_private_key.pem
+```
+
+or generate/rotate one key at a time:
+
+```bash
+make keys-hmac ARGS="--id 2"          # DEVICE_HMAC_KEYS / AUDIT_HMAC_KEYS entry
+make keys-jwt ARGS="--kid key-2"      # JWT_ED25519_KEYS entry
+make keys-wireauth ARGS="--out wireauth_private_key.pem"
+```
+
+Treat the output as a secret: pipe it into your secret manager rather than
+committing it, and never reuse a DEVICE_HMAC_KEYS value for
+AUDIT_HMAC_KEYS or vice versa. `JWT_ED25519_KEYS` and `WIREAUTH_RSA_KEY_PATH`
+(or `WIREAUTH_RSA_KEY_PEM`) are required — config load fails fast if either
+is missing — once `APP_ENV` is anything other than `development`/`test`.
 
 For production, TLS is mandatory by default. Use one of these mutually
 exclusive configurations:
@@ -153,10 +183,24 @@ them. See `AGENTS.md` for the enforceable rules and PR checklist.
   rejected.
 - **Origins.** `WEBAUTHN_RP_ORIGINS` and `ALLOWED_WS_ORIGINS` reject the
   wildcard `*` outside `development`/`test` at config-load time.
+- **Generating secrets.** Use `make keys` / `go run ./cmd/main keys {hmac,jwt,
+  wireauth,all}` (see README > Generating secrets) rather than hand-rolling
+  values with `openssl`/`head -c` ad hoc — the CLI produces the exact
+  encoding each key ring parser expects and won't silently accept a key
+  short enough to weaken the HMAC. The dev-only values baked into
+  `.env.example` and `config.go`'s development fallback are public (they are
+  in this repository); never reuse them once `APP_ENV` leaves
+  `development`/`test`.
 - **Vulnerability reports.** If you find a security issue in this codebase,
   do not open a public issue; contact the maintainers directly first.
 
 ## Verification
+
+```bash
+make check   # fmt + vet + lint + test, same as CI
+```
+
+or run the steps individually:
 
 ```bash
 GOCACHE=/private/tmp/airlance-go-build-cache go test ./...

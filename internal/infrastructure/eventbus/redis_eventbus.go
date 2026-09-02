@@ -1,4 +1,3 @@
-// Package eventbus provides Redis Pub/Sub backed distributed event bus implementation.
 package eventbus
 
 import (
@@ -47,15 +46,12 @@ func (s *redisSubscription) Close() error {
 	return nil
 }
 
-// RedisEventBus implements domainEB.EventBus using Redis Pub/Sub for multi-instance deployments.
 type RedisEventBus struct {
 	redis *goredis.Client
 }
 
-// Ensure RedisEventBus implements domainEB.EventBus.
 var _ domainEB.EventBus = (*RedisEventBus)(nil)
 
-// NewRedisEventBus constructs a RedisEventBus.
 func NewRedisEventBus(redis *goredis.Client) *RedisEventBus {
 	return &RedisEventBus{redis: redis}
 }
@@ -66,7 +62,6 @@ type wireEvent struct {
 	Timestamp time.Time       `json:"timestamp"`
 }
 
-// Publish broadcasts an event to the Redis topic channel.
 func (b *RedisEventBus) Publish(ctx context.Context, topic string, event domainEB.Event) error {
 	if b.redis == nil {
 		return fmt.Errorf("eventbus: uninitialized redis client")
@@ -92,7 +87,6 @@ func (b *RedisEventBus) Publish(ctx context.Context, topic string, event domainE
 	return b.redis.Publish(ctx, channel, msgBytes).Err()
 }
 
-// Subscribe subscribes to a Redis topic channel.
 func (b *RedisEventBus) Subscribe(ctx context.Context, topic string) (domainEB.Subscription, error) {
 	if b.redis == nil {
 		return nil, fmt.Errorf("eventbus: uninitialized redis client")
@@ -101,7 +95,6 @@ func (b *RedisEventBus) Subscribe(ctx context.Context, topic string) (domainEB.S
 	channel := fmt.Sprintf("events:%s", topic)
 	pubsub := b.redis.Subscribe(ctx, channel)
 
-	// Confirm subscription established
 	_, err := pubsub.Receive(ctx)
 	if err != nil {
 		_ = pubsub.Close()

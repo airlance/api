@@ -12,12 +12,10 @@ import (
 	"airlance.org/api/internal/usecase/apiauth"
 )
 
-// ClientHandlers provides API client management and token issuance endpoints.
 type ClientHandlers struct {
 	apiAuthUC *apiauth.Usecase
 }
 
-// NewClientHandlers constructs ClientHandlers.
 func NewClientHandlers(apiAuthUC *apiauth.Usecase) *ClientHandlers {
 	return &ClientHandlers{apiAuthUC: apiAuthUC}
 }
@@ -26,7 +24,6 @@ type createClientRequest struct {
 	Name string `json:"name"`
 }
 
-// CreateClient handles POST /api/v1/clients (session-protected).
 func (h *ClientHandlers) CreateClient(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	if userID == uuid.Nil {
@@ -53,7 +50,6 @@ func (h *ClientHandlers) CreateClient(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, res)
 }
 
-// ListClients handles GET /api/v1/clients (session-protected).
 func (h *ClientHandlers) ListClients(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	if userID == uuid.Nil {
@@ -70,7 +66,6 @@ func (h *ClientHandlers) ListClients(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"clients": clients})
 }
 
-// RevokeClient handles DELETE /api/v1/clients/{id} (session-protected).
 func (h *ClientHandlers) RevokeClient(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	if userID == uuid.Nil {
@@ -106,7 +101,6 @@ type issueTokenRequest struct {
 	Secret   string `json:"secret"`
 }
 
-// IssueToken handles POST /api/v1/auth/token (public with client credentials).
 func (h *ClientHandlers) IssueToken(w http.ResponseWriter, r *http.Request) {
 	var req issueTokenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

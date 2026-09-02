@@ -42,13 +42,11 @@ func TestRedisOutage_FailClosedProtection(t *testing.T) {
 		keyRing,
 	)
 
-	// 1. BeginSignup during outage -> Denied
 	_, err := authUC.BeginSignup(context.Background(), "192.168.1.1")
 	if err == nil {
 		t.Errorf("expected fail-closed error on BeginSignup during Redis outage")
 	}
 
-	// 2. BeginLogin during outage -> Denied
 	_, err = authUC.BeginLogin(context.Background(), "192.168.1.1")
 	if err == nil {
 		t.Errorf("expected fail-closed error on BeginLogin during Redis outage")

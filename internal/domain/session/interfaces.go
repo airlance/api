@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Repository defines storage operations for sessions.
 type Repository interface {
 	Create(ctx context.Context, s *Session) error
 	GetValid(ctx context.Context, tokenHash []byte) (*Session, error)

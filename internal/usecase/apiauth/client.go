@@ -12,7 +12,6 @@ import (
 	"airlance.org/api/internal/domain/crypto"
 )
 
-// CreateClient creates a new API client with the default tier and returns the plaintext secret once.
 func (u *Usecase) CreateClient(ctx context.Context, userID uuid.UUID, name, ip, userAgent, requestID string) (*ClientCreationResult, error) {
 	defaultTier, err := u.tierRepo.GetByName(ctx, "default")
 	if err != nil {
@@ -73,7 +72,6 @@ func (u *Usecase) CreateClient(ctx context.Context, userID uuid.UUID, name, ip, 
 	}, nil
 }
 
-// RevokeClient marks a client registration revoked.
 func (u *Usecase) RevokeClient(ctx context.Context, userID, clientID uuid.UUID, ip, userAgent, requestID string) error {
 	client, err := u.clientRepo.GetByID(ctx, clientID)
 	if err != nil {
@@ -110,7 +108,6 @@ func (u *Usecase) RevokeClient(ctx context.Context, userID, clientID uuid.UUID, 
 	return err
 }
 
-// ListClients returns all API clients owned by a user.
 func (u *Usecase) ListClients(ctx context.Context, userID uuid.UUID) ([]*apiclient.APIClient, error) {
 	return u.clientRepo.ListByUserID(ctx, userID)
 }

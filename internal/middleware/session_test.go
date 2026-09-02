@@ -99,7 +99,6 @@ func TestSessionMiddleware_BearerAuth(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// 1. Request with Bearer token
 	req := httptest.NewRequest("GET", "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
@@ -112,7 +111,6 @@ func TestSessionMiddleware_BearerAuth(t *testing.T) {
 		t.Errorf("expected user ID %v, got %v", sess.UserID, capturedUID)
 	}
 
-	// 2. Request without token
 	unauthReq := httptest.NewRequest("GET", "/protected", nil)
 	unauthRec := httptest.NewRecorder()
 	handler.ServeHTTP(unauthRec, unauthReq)

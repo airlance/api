@@ -63,7 +63,6 @@ func TestWireauthV2_SharedFixturesContract(t *testing.T) {
 				t.Errorf("expected sequence %d, got %d", vec.Sequence, seq)
 			}
 
-			// Verify replay detection simulation (wrong sequence when decrypting)
 			if seq+1 == vec.Sequence {
 				t.Errorf("sequence must strictly equal expected value")
 			}
@@ -78,13 +77,11 @@ func TestWireauthV2_EncryptionDecryptionContract(t *testing.T) {
 	plaintext := []byte("Hello FlatBuffers over Wireauth v2 Encrypted Channel!")
 	seq := uint64(1)
 
-	// 1. Encrypt
 	ciphertext, err := wireauth.EncryptAESGCM(key, plaintext, seq)
 	if err != nil {
 		t.Fatalf("unexpected encryption error: %v", err)
 	}
 
-	// 2. Decrypt with correct key and extract sequence
 	decrypted, decryptedSeq, err := wireauth.DecryptAESGCM(key, ciphertext)
 	if err != nil {
 		t.Fatalf("unexpected decryption error: %v", err)
@@ -97,14 +94,12 @@ func TestWireauthV2_EncryptionDecryptionContract(t *testing.T) {
 		t.Errorf("expected sequence %d, got %d", seq, decryptedSeq)
 	}
 
-	// 3. Decrypt with corrupted key
 	wrongKey := make([]byte, 32)
 	_, _, err = wireauth.DecryptAESGCM(wrongKey, ciphertext)
 	if err == nil {
 		t.Errorf("expected error when decrypting with wrong key")
 	}
 
-	// 4. Decrypt with truncated/corrupted ciphertext
 	_, _, err = wireauth.DecryptAESGCM(key, ciphertext[:len(ciphertext)-5])
 	if err == nil {
 		t.Errorf("expected error when decrypting corrupted ciphertext")

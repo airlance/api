@@ -5,6 +5,5 @@ import (
 )
 
 var (
-	// ErrInvalidToken is returned when an invalid session token is provided.
 	ErrInvalidToken = session.ErrInvalidToken
 )

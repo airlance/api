@@ -245,7 +245,6 @@ func TestE2E_FullFlow(t *testing.T) {
 	ts := httptest.NewServer(server.Handler())
 	defer ts.Close()
 
-	// 1. Check /livez and /readyz
 	resp, err := http.Get(ts.URL + "/livez")
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("livez failed: code=%v, err=%v", resp.StatusCode, err)
@@ -256,7 +255,6 @@ func TestE2E_FullFlow(t *testing.T) {
 		t.Fatalf("readyz failed: code=%v, err=%v", resp.StatusCode, err)
 	}
 
-	// 2. Setup authenticated session
 	userID := uuid.New()
 	identID := uuid.New()
 	sessionToken, _, err := sessionUCInstance.CreateSession(context.Background(), userID, identID, nil, "127.0.0.1", "test", "req-1")
@@ -264,7 +262,6 @@ func TestE2E_FullFlow(t *testing.T) {
 		t.Fatalf("create session failed: %v", err)
 	}
 
-	// 3. Request WS Ticket
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ws/ticket", nil)
 	req.Header.Set("Authorization", "Bearer "+sessionToken)
 	resp, err = http.DefaultClient.Do(req)
@@ -277,7 +274,6 @@ func TestE2E_FullFlow(t *testing.T) {
 		t.Fatalf("expected valid ticket string")
 	}
 
-	// 4. Create API Client
 	createBody, _ := json.Marshal(map[string]string{"name": "E2E Client"})
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/clients", bytes.NewReader(createBody))
 	req.Header.Set("Authorization", "Bearer "+sessionToken)
@@ -296,7 +292,6 @@ func TestE2E_FullFlow(t *testing.T) {
 		t.Fatalf("expected created client and secret")
 	}
 
-	// 5. Issue API Client JWT
 	tokenReqBody, _ := json.Marshal(map[string]string{
 		"client_id": clientRes.Client.ID.String(),
 		"secret":    clientRes.Secret,
@@ -309,7 +304,6 @@ func TestE2E_FullFlow(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&tokenRes)
 	jwtToken := tokenRes["access_token"].(string)
 
-	// 6. Access /api/v1/getMe (First Request: Success)
 	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/getMe", nil)
 	req.Header.Set("Authorization", "Bearer "+jwtToken)
 	resp, err = http.DefaultClient.Do(req)
@@ -317,7 +311,6 @@ func TestE2E_FullFlow(t *testing.T) {
 		t.Fatalf("getMe request 1 failed: code=%v, err=%v", resp.StatusCode, err)
 	}
 
-	// 7. Access /api/v1/getMe (Second Request: Success, at limit 2)
 	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/getMe", nil)
 	req.Header.Set("Authorization", "Bearer "+jwtToken)
 	resp, err = http.DefaultClient.Do(req)
@@ -325,7 +318,6 @@ func TestE2E_FullFlow(t *testing.T) {
 		t.Fatalf("getMe request 2 failed: code=%v, err=%v", resp.StatusCode, err)
 	}
 
-	// 8. Access /api/v1/getMe (Third Request: 429 Rate Limited!)
 	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/getMe", nil)
 	req.Header.Set("Authorization", "Bearer "+jwtToken)
 	resp, err = http.DefaultClient.Do(req)

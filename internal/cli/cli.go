@@ -18,6 +18,7 @@ func NewRootCmd() *cobra.Command {
 		newVersionCmd(),
 		newMigrateCmd(),
 		newCleanupCmd(),
+		newKeysCmd(),
 	)
 
 	return rootCmd

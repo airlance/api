@@ -20,7 +20,6 @@ func TestGenerateOpaqueToken(t *testing.T) {
 		t.Errorf("expected unique tokens")
 	}
 
-	// Validate hash match
 	expectedHash := HashToken(tok1)
 	if !ConstantTimeCompareBytes(hash1, expectedHash) {
 		t.Errorf("computed hash does not match returned hash")
@@ -41,7 +40,6 @@ func TestVerifyKeyRingHMAC_CurrentAndPrevious(t *testing.T) {
 
 	data := []byte("test-device-identifier-12345")
 
-	// 1. Hash with old key
 	oldHash := ComputeHMAC(data, ring.Keys[1])
 	matched, kid, needsRotation := VerifyKeyRingHMAC(data, oldHash, ring)
 	if !matched {
@@ -54,7 +52,6 @@ func TestVerifyKeyRingHMAC_CurrentAndPrevious(t *testing.T) {
 		t.Errorf("expected needsRotation to be true for old key match")
 	}
 
-	// 2. Hash with current key
 	newHash, currentKID, err := ComputeKeyRingHMAC(data, ring)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -67,7 +64,6 @@ func TestVerifyKeyRingHMAC_CurrentAndPrevious(t *testing.T) {
 		t.Errorf("expected match with current key without rotation, got matched=%v, kid=%d, needsRotation=%v", matched, kid, needsRotation)
 	}
 
-	// 3. Unknown hash
 	matched, _, _ = VerifyKeyRingHMAC(data, []byte("wrong-hash-0000000000000000000000"), ring)
 	if matched {
 		t.Errorf("expected no match for invalid hash")

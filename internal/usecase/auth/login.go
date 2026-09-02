@@ -14,7 +14,6 @@ import (
 	"airlance.org/api/internal/domain/user"
 )
 
-// BeginLogin initiates discoverable passkey login.
 func (u *Usecase) BeginLogin(ctx context.Context, ip string) (*LoginOptionsResult, error) {
 	if ip != "" {
 		if err := u.checkChallengeRateLimit(ctx, fmt.Sprintf("auth:login_opts:ip:%s", ip)); err != nil {
@@ -30,7 +29,7 @@ func (u *Usecase) BeginLogin(ctx context.Context, ip string) (*LoginOptionsResul
 	challengeID := uuid.New()
 	ch := &passkey.Challenge{
 		ID:          challengeID,
-		UserID:      nil, // Discoverable, resolved later
+		UserID:      nil,
 		Type:        passkey.ChallengeTypeAuthentication,
 		SessionData: sdBytes,
 		ExpiresAt:   time.Now().Add(5 * time.Minute),
@@ -46,7 +45,6 @@ func (u *Usecase) BeginLogin(ctx context.Context, ip string) (*LoginOptionsResul
 	}, nil
 }
 
-// FinishLogin validates discoverable passkey assertion and issues a session.
 func (u *Usecase) FinishLogin(
 	ctx context.Context,
 	challengeID uuid.UUID,
@@ -62,7 +60,6 @@ func (u *Usecase) FinishLogin(
 		}
 	}
 
-	// 1. Consume challenge
 	ch, err := u.challengeRepo.ConsumeByID(ctx, challengeID)
 	if err != nil {
 		_ = u.recordAuthFailure(ctx, nil, "login", ip, userAgent, requestID, "invalid_or_consumed_challenge")
@@ -102,7 +99,6 @@ func (u *Usecase) FinishLogin(
 		return uRecord, allCreds, nil
 	}
 
-	// 2. Perform WebAuthn verification
 	cred, resolvedUser, err := u.webAuthnService.FinishLogin(ctx, ch.SessionData, responsePayload, lookupFunc)
 	if err != nil {
 		_ = u.recordAuthFailure(ctx, nil, "login", ip, userAgent, requestID, err.Error())
@@ -113,7 +109,6 @@ func (u *Usecase) FinishLogin(
 		return nil, errors.New("auth: failed to resolve user from credential")
 	}
 
-	// 3. Update credential sign count and touch device
 	now := time.Now()
 	_ = u.passkeyRepo.UpdateSignCount(ctx, resolvedCred.ID, cred.SignCount, now)
 
@@ -125,7 +120,6 @@ func (u *Usecase) FinishLogin(
 		}
 	}
 
-	// 4. Create Session
 	token, sess, err := u.sessionUsecase.CreateSession(ctx, resolvedUser.ID, resolvedIdent.ID, deviceID, ip, userAgent, requestID)
 	if err != nil {
 		return nil, fmt.Errorf("auth: create session failed: %w", err)

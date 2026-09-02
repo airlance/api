@@ -13,7 +13,6 @@ import (
 	"airlance.org/api/internal/domain/eventbus"
 )
 
-// RevokeDevice marks a device as revoked and broadcasts a device.revoked event.
 func (u *Usecase) RevokeDevice(ctx context.Context, userID, deviceID uuid.UUID, ip, userAgent, requestID string) error {
 	dev, err := u.deviceRepo.GetByID(ctx, deviceID)
 	if err != nil {
@@ -62,7 +61,6 @@ func (u *Usecase) RevokeDevice(ctx context.Context, userID, deviceID uuid.UUID, 
 	return nil
 }
 
-// ListDevices returns all devices for a given user.
 func (u *Usecase) ListDevices(ctx context.Context, userID uuid.UUID) ([]*device.Device, error) {
 	return u.deviceRepo.ListByUserID(ctx, userID)
 }
@@ -97,7 +95,6 @@ func (u *Usecase) resolveOrCreateDevice(ctx context.Context, userID uuid.UUID, r
 		return matchedDevice.ID, nil
 	}
 
-	// Create new device record
 	currentHash, _, err := crypto.ComputeKeyRingHMAC(data, ring)
 	if err != nil {
 		return uuid.Nil, err

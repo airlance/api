@@ -10,13 +10,11 @@ import (
 	"airlance.org/api/internal/middleware"
 )
 
-// TicketHandlers provides WebSocket ticket issuance endpoints.
 type TicketHandlers struct {
 	ticketRepo wsticket.Repository
 	cfg        *config.Config
 }
 
-// NewTicketHandlers constructs TicketHandlers.
 func NewTicketHandlers(ticketRepo wsticket.Repository, cfg *config.Config) *TicketHandlers {
 	return &TicketHandlers{
 		ticketRepo: ticketRepo,
@@ -24,7 +22,6 @@ func NewTicketHandlers(ticketRepo wsticket.Repository, cfg *config.Config) *Tick
 	}
 }
 
-// IssueTicket handles POST /api/v1/ws/ticket (session-protected).
 func (h *TicketHandlers) IssueTicket(w http.ResponseWriter, r *http.Request) {
 	sess := middleware.GetSession(r.Context())
 	if sess == nil {

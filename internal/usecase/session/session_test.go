@@ -125,7 +125,6 @@ func TestSessionUsecase_Lifecycle(t *testing.T) {
 	userID := uuid.New()
 	identID := uuid.New()
 
-	// 1. Create Session
 	token, sess, err := uc.CreateSession(ctx, userID, identID, nil, "127.0.0.1", "test-agent", "req-1")
 	if err != nil {
 		t.Fatalf("unexpected create session error: %v", err)
@@ -138,7 +137,6 @@ func TestSessionUsecase_Lifecycle(t *testing.T) {
 		t.Errorf("expected login success audit event, got %v", auditRepo.events)
 	}
 
-	// 2. Validate Session
 	validSess, err := uc.Validate(ctx, token)
 	if err != nil {
 		t.Fatalf("unexpected validate error: %v", err)
@@ -147,7 +145,6 @@ func TestSessionUsecase_Lifecycle(t *testing.T) {
 		t.Errorf("expected session ID %v, got %v", sess.ID, validSess.ID)
 	}
 
-	// 3. Revoke Session
 	if err := uc.Revoke(ctx, token, "127.0.0.1", "test-agent", "req-2"); err != nil {
 		t.Fatalf("unexpected revoke error: %v", err)
 	}
@@ -156,7 +153,6 @@ func TestSessionUsecase_Lifecycle(t *testing.T) {
 		t.Errorf("expected session revoked audit event, got %v", auditRepo.events)
 	}
 
-	// 4. Validate revoked session
 	_, err = uc.Validate(ctx, token)
 	if err == nil {
 		t.Errorf("expected error validating revoked session")

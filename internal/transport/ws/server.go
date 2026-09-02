@@ -21,7 +21,6 @@ import (
 	"airlance.org/api/internal/middleware"
 )
 
-// Server coordinates WebSocket upgrade requests, ticket validation, and wireauth handshakes.
 type Server struct {
 	upgrader       websocket.Upgrader
 	ticketRepo     wsticket.Repository
@@ -36,7 +35,6 @@ type Server struct {
 	log            *logger.Logger
 }
 
-// NewServer constructs a WebSocket Server.
 func NewServer(
 	ticketRepo wsticket.Repository,
 	sessionRepo session.Repository,
@@ -89,15 +87,12 @@ func NewServer(
 	return s
 }
 
-// ServeHTTP handles the /ws upgrade endpoint.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientIP := middleware.GetClientIP(r.Context())
 	maskSecret := s.cfg.AuditSubjectHMACKeyRing.Keys[s.cfg.AuditSubjectHMACKeyRing.CurrentKeyID]
 
-	// 1. Enforce TLS requirement
 	isTLS := r.TLS != nil
 	if !isTLS && s.cfg.TLSTerminationIngress {
-		// Check if terminated at a trusted proxy
 		if middleware.IsTrustedProxy(r.RemoteAddr, s.cfg.TrustedProxies) {
 			forwardedProto := r.Header.Get("X-Forwarded-Proto")
 			if strings.EqualFold(forwardedProto, "https") || strings.EqualFold(forwardedProto, "wss") {
@@ -112,7 +107,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Pre-upgrade IP rate limiting (fail-closed to protect from DoS)
 	if s.limiter != nil {
 		limits := []domainRL.Limit{
 			{Name: "ws_upgrade_burst", Max: 20, Window: 10 * time.Second},
@@ -126,7 +120,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Extract ticket
 	ticketID := r.Header.Get("X-WS-Ticket")
 	if ticketID == "" {
 		ticketID = r.URL.Query().Get("ticket")
@@ -137,11 +130,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Pre-upgrade timeout context
 	preCtx, cancelPre := context.WithTimeout(r.Context(), s.cfg.WSPreUpgradeTimeout)
 	defer cancelPre()
 
-	// Atomically consume ticket (DELETE ... RETURNING in Redis)
 	ticket, err := s.ticketRepo.ConsumeByID(preCtx, ticketID)
 	if err != nil {
 		s.log.Warn("Invalid or already consumed WS ticket", "masked_ip", logger.MaskIdentifier(clientIP, maskSecret))
@@ -149,7 +140,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate underlying session and device state before handshake
 	sess, err := s.sessionRepo.GetByID(preCtx, ticket.SessionID)
 	if err != nil || sess == nil || !sess.IsValid() {
 		s.log.Warn("WS ticket referenced invalid session", "masked_session", logger.MaskUUID(ticket.SessionID, maskSecret))
@@ -166,7 +156,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 5. Connection limits pre-check
 	if s.registry.Count() >= s.cfg.MaxWSConnections {
 		s.log.Warn("Max server WebSocket connections reached", "count", s.registry.Count())
 		http.Error(w, "Server Busy", http.StatusServiceUnavailable)
@@ -186,14 +175,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 6. Upgrade connection to WebSocket
 	wsConn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.log.Error(err, "WebSocket upgrade failed", "masked_ip", logger.MaskIdentifier(clientIP, maskSecret))
 		return
 	}
 
-	// 7. Perform Wireauth v2 handshake
 	var c2sKey, s2cKey []byte
 	if s.wireauthServer != nil {
 		_ = wsConn.SetReadDeadline(time.Now().Add(s.cfg.WSHandshakeTimeout))
@@ -211,7 +198,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		c2sKey = wireauthSession.ClientToServerKey
 		s2cKey = wireauthSession.ServerToClientKey
 
-		// Reset deadlines for normal transport
 		_ = wsConn.SetReadDeadline(time.Time{})
 		_ = wsConn.SetWriteDeadline(time.Time{})
 	} else {
@@ -219,7 +205,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s2cKey = make([]byte, 32)
 	}
 
-	// 8. Construct session and register atomically
 	wsSession := NewSession(
 		r.Context(),
 		wsConn,
@@ -245,14 +230,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	wsSession.StartLifecycle()
 }
 
-// Shutdown gracefully drains active WebSocket connections.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.log.Info("Draining WebSocket connections")
 	s.registry.Drain(2 * time.Second)
 	return nil
 }
 
-// StartEventBusListeners listens for session and device revocation events to terminate active WS channels.
 func (s *Server) StartEventBusListeners(ctx context.Context) error {
 	if s.eventBus == nil {
 		return nil

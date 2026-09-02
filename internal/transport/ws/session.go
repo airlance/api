@@ -18,13 +18,10 @@ import (
 )
 
 var (
-	// ErrSendQueueFull is returned when a slow consumer exceeds the bounded send channel.
-	ErrSendQueueFull = errors.New("ws: send queue full, slow consumer")
-	// ErrSequenceMismatch is returned when an out-of-order or replayed frame sequence is encountered.
+	ErrSendQueueFull    = errors.New("ws: send queue full, slow consumer")
 	ErrSequenceMismatch = errors.New("ws: sequence counter mismatch or replay")
 )
 
-// Session represents an active encrypted WebSocket session.
 type Session struct {
 	UserID    uuid.UUID
 	SessionID uuid.UUID
@@ -50,7 +47,6 @@ type Session struct {
 	closeOnce sync.Once
 }
 
-// NewSession constructs a Session.
 func NewSession(
 	parentCtx context.Context,
 	conn *websocket.Conn,
@@ -87,12 +83,10 @@ func NewSession(
 	}
 }
 
-// NextMessageID generates a monotonically increasing message ID for connection-level messages.
 func (s *Session) NextMessageID() uint64 {
 	return atomic.AddUint64(&s.nextMsgID, 1)
 }
 
-// Send encrypts and enqueues a FlatBuffers envelope payload for writing.
 func (s *Session) Send(envelopeBytes []byte) error {
 	seq := atomic.AddUint64(&s.outSeq, 1)
 	encryptedPacket, err := wireauth.EncryptAESGCM(s.serverToClientKey, envelopeBytes, seq)
@@ -110,13 +104,11 @@ func (s *Session) Send(envelopeBytes []byte) error {
 	}
 }
 
-// SendError constructs and sends an error envelope.
 func (s *Session) SendError(corrID uint64, code fbWS.ErrorCode, msg string, retryable bool, retryAfterMs uint32) error {
 	envelopeBytes := BuildErrorEnvelope(s.cfg.CurrentProtocol, s.NextMessageID(), corrID, code, msg, retryable, retryAfterMs)
 	return s.Send(envelopeBytes)
 }
 
-// StartLifecycle begins read and write loops. Blocks until connection terminates.
 func (s *Session) StartLifecycle() {
 	defer s.registry.Remove(s)
 	defer s.Close("lifecycle_terminated")
@@ -157,21 +149,18 @@ func (s *Session) readLoop() {
 
 		_ = s.conn.SetReadDeadline(time.Now().Add(idleTimeout))
 
-		// Decrypt packet
 		plaintext, seq, err := wireauth.DecryptAESGCM(s.clientToServerKey, packet)
 		if err != nil {
 			s.log.Warn("Decryption error", "err", err)
 			break
 		}
 
-		// Strictly verify sequence counter
 		expectedSeq := atomic.AddUint64(&s.inSeq, 1)
 		if seq != expectedSeq {
 			s.log.Warn("Sequence mismatch or replay attack detected", "expected", expectedSeq, "actual", seq)
 			break
 		}
 
-		// Dispatch decoded envelope
 		if err := s.router.Dispatch(s.ctx, s, plaintext); err != nil {
 			if errors.Is(err, ErrUnsupportedProtocol) {
 				break
@@ -215,7 +204,6 @@ func (s *Session) writeLoop() {
 	}
 }
 
-// Close gracefully closes the session.
 func (s *Session) Close(reason string) {
 	s.closeOnce.Do(func() {
 		if s.cancel != nil {

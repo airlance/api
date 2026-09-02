@@ -19,7 +19,6 @@ type (
 	apiClaimsCtxKey   struct{}
 )
 
-// JWTMiddleware validates external client JWTs signed with Ed25519 and extracts client rate limit claims.
 func JWTMiddleware(keyRing config.Ed25519KeyRing, expectedIssuer string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +86,6 @@ func containsAudience(audiences jwt.ClaimStrings, expected string) bool {
 	return false
 }
 
-// GetAPIClientID extracts the active API client ID from context.
 func GetAPIClientID(ctx context.Context) uuid.UUID {
 	if cid, ok := ctx.Value(apiClientIDCtxKey{}).(uuid.UUID); ok {
 		return cid
@@ -95,7 +93,6 @@ func GetAPIClientID(ctx context.Context) uuid.UUID {
 	return uuid.Nil
 }
 
-// GetAPIClaims extracts the parsed APIClaims from context.
 func GetAPIClaims(ctx context.Context) (apiauth.APIClaims, bool) {
 	if c, ok := ctx.Value(apiClaimsCtxKey{}).(apiauth.APIClaims); ok {
 		return c, true
@@ -103,7 +100,6 @@ func GetAPIClaims(ctx context.Context) (apiauth.APIClaims, bool) {
 	return apiauth.APIClaims{}, false
 }
 
-// APIClientLimitsProvider constructs dynamic rate limit windows from JWT claims in context.
 func APIClientLimitsProvider(r *http.Request) []domainRL.Limit {
 	claims, ok := GetAPIClaims(r.Context())
 	if !ok || claims.RequestsPerMinute <= 0 {
@@ -115,7 +111,6 @@ func APIClientLimitsProvider(r *http.Request) []domainRL.Limit {
 	}
 }
 
-// APIClientKeyExtractor extracts the client ID as rate limit key.
 func APIClientKeyExtractor(r *http.Request) string {
 	cid := GetAPIClientID(r.Context())
 	if cid == uuid.Nil {

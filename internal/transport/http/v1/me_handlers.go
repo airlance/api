@@ -11,17 +11,14 @@ import (
 	"airlance.org/api/internal/middleware"
 )
 
-// MeHandlers provides authenticated profile and rate limit inspection.
 type MeHandlers struct {
 	limiter domainRL.Limiter
 }
 
-// NewMeHandlers constructs MeHandlers.
 func NewMeHandlers(limiter domainRL.Limiter) *MeHandlers {
 	return &MeHandlers{limiter: limiter}
 }
 
-// GetMe handles GET /api/v1/getMe (JWT-authenticated).
 func (h *MeHandlers) GetMe(w http.ResponseWriter, r *http.Request) {
 	clientID := middleware.GetAPIClientID(r.Context())
 	userID := middleware.GetUserID(r.Context())

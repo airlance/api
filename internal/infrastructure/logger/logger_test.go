@@ -21,7 +21,6 @@ func TestLogger_SensitiveValuesNotEmittedRaw(t *testing.T) {
 	rawUserID := uuid.New()
 	rawDeviceID := uuid.New()
 
-	// 1. Log rate limiting error with masked identifier
 	log.Named(CategoryRateLimit).Error(
 		errors.New("rate limit backend error"),
 		"Rate limiter backend check failed",
@@ -32,7 +31,6 @@ func TestLogger_SensitiveValuesNotEmittedRaw(t *testing.T) {
 
 	out := buf.String()
 
-	// Verify raw values are NOT present
 	if strings.Contains(out, "192.168.1.100") {
 		t.Errorf("raw IP leaked into log output: %s", out)
 	}
@@ -49,7 +47,6 @@ func TestLogger_SensitiveValuesNotEmittedRaw(t *testing.T) {
 		t.Errorf("raw ticket leaked into log output: %s", out)
 	}
 
-	// Verify masked representations are present
 	if !strings.Contains(out, "masked_key") || !strings.Contains(out, "h:") {
 		t.Errorf("expected masked_key with HMAC prefix: %s", out)
 	}

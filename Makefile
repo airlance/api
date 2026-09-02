@@ -1,70 +1,93 @@
-APP_NAME=airlance-api
-CMD_DIR=./cmd/main
-BIN_DIR=./bin
-VERSION ?= dev
-COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS := -s -w \
-	-X main.Version=$(VERSION) \
-	-X main.Commit=$(COMMIT) \
-	-X main.BuildDate=$(BUILD_DATE)
+.DEFAULT_GOAL := help
 
-.PHONY: help version run fmt vet lint tidy test migrate-up migrate-down migrate-create cleanup up down zip
+BINARY       := airlance-api
+CMD          := ./cmd/main
+VERSION      := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS      := -X 'airlance.org/api/internal/cli.Version=$(VERSION)'
+GOCACHE_DIR  ?= $(CURDIR)/.gocache
 
-help:
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-25s %s\n", $$1, $$2}'
+.PHONY: help
+help: ## Show this help
+	@grep -hE '^[a-zA-Z0-9_-]+:.*##' $(MAKEFILE_LIST) | sort | \
+		awk 'BEGIN {FS = ":.*##"}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-version: ## Show build metadata
-	@echo "Version: $(VERSION)"
-	@echo "Commit:  $(COMMIT)"
-	@echo "Build:   $(BUILD_DATE)"
+## --- Build & run ------------------------------------------------------
 
-docker-dev-build: ## Build docker image
-	docker build \
-		--build-arg VERSION=$(VERSION) \
-		--build-arg COMMIT=$(COMMIT) \
-		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		--no-cache \
-		-t airlance/api:dev .
+.PHONY: build
+build: ## Build the airlance-api binary into ./dist
+	mkdir -p dist
+	go build -ldflags "$(LDFLAGS)" -o dist/$(BINARY) $(CMD)
 
-docker-dev-push: ## Push docker image
-	docker push airlance/api:dev
+.PHONY: run
+run: ## Run the HTTP/WS server (expects env already loaded, see .env.example)
+	go run $(CMD) serve
 
-up: ## Start docker containers
-	docker compose up -d
+.PHONY: cleanup
+cleanup: ## Purge expired challenges/sessions (pass ARGS="--max-age 24h")
+	go run $(CMD) cleanup $(ARGS)
 
-down: ## Stop docker containers
+## --- Local infrastructure ----------------------------------------------
+
+.PHONY: dev-up
+dev-up: ## Start local Postgres and Redis via docker compose
+	docker compose up -d postgres redis
+
+.PHONY: dev-down
+dev-down: ## Stop local docker compose services
 	docker compose down
 
-run: ## Run application
-	go run $(CMD_DIR) serve
+.PHONY: migrate-up
+migrate-up: ## Apply all available migrations
+	go run $(CMD) migrate up
 
-fmt: ## Format code
-	go fmt ./...
+.PHONY: migrate-down
+migrate-down: ## Roll back one migration (pass ARGS="--steps N" for more)
+	go run $(CMD) migrate down $(ARGS)
 
-vet: ## Vet code
-	go vet ./...
+.PHONY: migrate-create
+migrate-create: ## Create a new migration pair: make migrate-create NAME=add_something
+	@if [ -z "$(NAME)" ]; then echo "usage: make migrate-create NAME=add_something"; exit 1; fi
+	go run $(CMD) migrate create $(NAME)
 
-lint: ## Run golangci-lint
+## --- Secrets ------------------------------------------------------------
+
+.PHONY: keys
+keys: ## Generate a fresh HMAC/JWT/wireauth secret set for a new environment
+	go run $(CMD) keys all
+
+.PHONY: keys-hmac
+keys-hmac: ## Generate a single HMAC key ring entry (pass ARGS="--id 2" to rotate)
+	go run $(CMD) keys hmac $(ARGS)
+
+.PHONY: keys-jwt
+keys-jwt: ## Generate a single JWT Ed25519 key ring entry
+	go run $(CMD) keys jwt $(ARGS)
+
+.PHONY: keys-wireauth
+keys-wireauth: ## Generate the wireauth v2 RSA private key file
+	go run $(CMD) keys wireauth $(ARGS)
+
+## --- Quality gates (see AGENTS.md > Change checklist) -------------------
+
+.PHONY: fmt
+fmt: ## gofmt every tracked Go file
+	gofmt -l -w .
+
+.PHONY: vet
+vet: ## go vet ./...
+	GOCACHE=$(GOCACHE_DIR) go vet ./...
+
+.PHONY: test
+test: ## go test ./...
+	GOCACHE=$(GOCACHE_DIR) go test ./...
+
+.PHONY: lint
+lint: ## golangci-lint run (requires golangci-lint on PATH)
 	golangci-lint run
 
-tidy: ## Go mod tidy
-	go mod tidy
+.PHONY: check
+check: fmt vet lint test ## Run the full local check suite before handoff
 
-test: ## Run tests
-	go test ./...
-
-migrate-up: ## Apply migrations
-	go run $(CMD_DIR) migrate up
-
-migrate-down: ## Rollback one migration
-	go run $(CMD_DIR) migrate down --steps 1
-
-migrate-create: ## Create migration
-	go run $(CMD_DIR) migrate create $(name)
-
-cleanup: ## Purge expired sessions and challenges
-	go run $(CMD_DIR) cleanup
-
-zip: ## Archive project
-	COPYFILE_DISABLE=1 zip -r api.zip . -x ".git/*" ".idea/*" ".env" ".env.example" ".gitignore" "app" "internal/protocol/generated/*" "Makefile" "*.DS_Store" "*/.DS_Store" "__MACOSX/*" "docker-compose.yml" "Dockerfile"
+.PHONY: clean
+clean: ## Remove build/test artifacts
+	rm -rf dist coverage.out coverage.html $(GOCACHE_DIR)

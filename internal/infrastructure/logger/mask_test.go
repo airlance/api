@@ -19,13 +19,11 @@ func TestMaskIdentifier(t *testing.T) {
 		t.Fatalf("masked output must not contain substring of raw ID")
 	}
 
-	// Determinism check
 	masked2 := MaskIdentifier(rawID, secret)
 	if masked != masked2 {
 		t.Errorf("expected deterministic mask, got %s and %s", masked, masked2)
 	}
 
-	// Distinct inputs produce distinct outputs
 	maskedOther := MaskIdentifier("user-5678-other", secret)
 	if masked == maskedOther {
 		t.Errorf("different inputs should produce distinct masks")

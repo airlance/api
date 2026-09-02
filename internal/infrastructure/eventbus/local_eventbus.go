@@ -1,4 +1,3 @@
-// Package eventbus provides an in-process EventBus implementation.
 package eventbus
 
 import (
@@ -33,20 +32,17 @@ func (s *localSubscription) Close() error {
 	return nil
 }
 
-// LocalEventBus implements domainEB.EventBus for in-process messaging.
 type LocalEventBus struct {
 	mu   sync.RWMutex
 	subs map[string][]*localSubscription
 }
 
-// NewLocalEventBus constructs a LocalEventBus.
 func NewLocalEventBus() *LocalEventBus {
 	return &LocalEventBus{
 		subs: make(map[string][]*localSubscription),
 	}
 }
 
-// Publish broadcasts an event to all active subscribers for the topic.
 func (b *LocalEventBus) Publish(ctx context.Context, topic string, event domainEB.Event) error {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -67,7 +63,6 @@ func (b *LocalEventBus) Publish(ctx context.Context, topic string, event domainE
 	return nil
 }
 
-// Subscribe registers a subscription channel for a topic.
 func (b *LocalEventBus) Subscribe(ctx context.Context, topic string) (domainEB.Subscription, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

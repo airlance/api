@@ -9,7 +9,6 @@ import (
 	"airlance.org/api/internal/infrastructure/logger"
 )
 
-// RateLimitConfig defines route-specific rate limiting behavior.
 type RateLimitConfig struct {
 	Limiter        domainRL.Limiter
 	KeyExtractor   func(r *http.Request) string
@@ -18,7 +17,6 @@ type RateLimitConfig struct {
 	FailClosed     bool
 }
 
-// RateLimitMiddleware enforces multi-window rate limits.
 func RateLimitMiddleware(cfg RateLimitConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,12 +51,11 @@ func RateLimitMiddleware(cfg RateLimitConfig) func(http.Handler) http.Handler {
 					writeJSONError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Rate limiting service temporarily unavailable")
 					return
 				}
-				// Fail-open: allow request to proceed
+
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// Check results and find most restrictive
 			allAllowed := true
 			var mostRestrictive domainRL.Result
 			var minRemaining int64 = 1<<62 - 1
@@ -94,14 +91,12 @@ func RateLimitMiddleware(cfg RateLimitConfig) func(http.Handler) http.Handler {
 	}
 }
 
-// FixedLimits helper returns a LimitsProvider for static rules.
 func FixedLimits(limits ...domainRL.Limit) func(r *http.Request) []domainRL.Limit {
 	return func(r *http.Request) []domainRL.Limit {
 		return limits
 	}
 }
 
-// IPKeyExtractor helper extracts the client IP as the rate limit key.
 func IPKeyExtractor(prefix string) func(r *http.Request) string {
 	return func(r *http.Request) string {
 		ip := GetClientIP(r.Context())

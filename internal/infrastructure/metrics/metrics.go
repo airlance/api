@@ -1,4 +1,3 @@
-// Package metrics provides Prometheus-compatible telemetry for HTTP, authentication, rate limiting, and WebSockets.
 package metrics
 
 import (
@@ -8,7 +7,6 @@ import (
 	"sync/atomic"
 )
 
-// Registry holds aggregated metrics counters without global mutable state.
 type Registry struct {
 	mu sync.RWMutex
 
@@ -21,7 +19,6 @@ type Registry struct {
 	wsActiveConnections     int64
 }
 
-// NewRegistry constructs a new Metrics Registry.
 func NewRegistry() *Registry {
 	return &Registry{
 		httpRequestsTotal:  make(map[string]*uint64),
@@ -30,7 +27,6 @@ func NewRegistry() *Registry {
 	}
 }
 
-// IncHTTPRequests increments HTTP request counter with status code and method.
 func (r *Registry) IncHTTPRequests(method, path string, status int) {
 	key := fmt.Sprintf(`method="%s",path="%s",status="%d"`, method, path, status)
 	r.mu.Lock()
@@ -44,7 +40,6 @@ func (r *Registry) IncHTTPRequests(method, path string, status int) {
 	atomic.AddUint64(ptr, 1)
 }
 
-// IncAuthEvents increments authentication event counter.
 func (r *Registry) IncAuthEvents(ceremony, result string) {
 	key := fmt.Sprintf(`ceremony="%s",result="%s"`, ceremony, result)
 	r.mu.Lock()
@@ -58,7 +53,6 @@ func (r *Registry) IncAuthEvents(ceremony, result string) {
 	atomic.AddUint64(ptr, 1)
 }
 
-// IncRateLimitHits increments rate limit rejection counter.
 func (r *Registry) IncRateLimitHits(scope string) {
 	key := fmt.Sprintf(`scope="%s"`, scope)
 	r.mu.Lock()
@@ -72,27 +66,22 @@ func (r *Registry) IncRateLimitHits(scope string) {
 	atomic.AddUint64(ptr, 1)
 }
 
-// IncWSHandshakeErrors increments WS handshake failure counter.
 func (r *Registry) IncWSHandshakeErrors() {
 	atomic.AddUint64(&r.wsHandshakeErrorsTotal, 1)
 }
 
-// IncWSMessagesSent increments WS messages sent counter.
 func (r *Registry) IncWSMessagesSent() {
 	atomic.AddUint64(&r.wsMessagesSentTotal, 1)
 }
 
-// IncWSMessagesReceived increments WS messages received counter.
 func (r *Registry) IncWSMessagesReceived() {
 	atomic.AddUint64(&r.wsMessagesReceivedTotal, 1)
 }
 
-// SetWSConnections updates active WebSocket connection gauge.
 func (r *Registry) SetWSConnections(count int64) {
 	atomic.StoreInt64(&r.wsActiveConnections, count)
 }
 
-// Handler returns an http.Handler that renders Prometheus text exposition format.
 func (r *Registry) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")

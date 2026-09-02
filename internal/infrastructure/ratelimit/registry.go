@@ -12,7 +12,6 @@ type cachedLimiter struct {
 	lastSeen time.Time
 }
 
-// Registry caches per-subject or per-tier rate limit rules with idle eviction.
 type Registry struct {
 	mu      sync.RWMutex
 	cache   map[string]*cachedLimiter
@@ -20,7 +19,6 @@ type Registry struct {
 	ttl     time.Duration
 }
 
-// NewRegistry constructs a Registry.
 func NewRegistry(limiter domainRL.Limiter, idleTTL time.Duration) *Registry {
 	r := &Registry{
 		cache:   make(map[string]*cachedLimiter),
@@ -31,7 +29,6 @@ func NewRegistry(limiter domainRL.Limiter, idleTTL time.Duration) *Registry {
 	return r
 }
 
-// SetLimits registers or updates the configured limits for a subject key.
 func (r *Registry) SetLimits(key string, limits []domainRL.Limit) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -41,7 +38,6 @@ func (r *Registry) SetLimits(key string, limits []domainRL.Limit) {
 	}
 }
 
-// GetLimits retrieves the limits registered for a subject key.
 func (r *Registry) GetLimits(key string) ([]domainRL.Limit, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

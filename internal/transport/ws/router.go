@@ -12,21 +12,17 @@ import (
 )
 
 var (
-	// ErrUnsupportedProtocol is returned when a client version is below supported bounds.
 	ErrUnsupportedProtocol = errors.New("ws: unsupported protocol version")
 )
 
-// Handler handles a decoded FlatBuffers message payload.
 type Handler func(ctx context.Context, s *Session, env *fbWS.Envelope) error
 
-// Router dispatches decoded FlatBuffers envelopes to registered union handlers.
 type Router struct {
 	handlers             map[fbWS.Payload]Handler
 	minSupportedProtocol uint32
 	currentProtocol      uint32
 }
 
-// NewRouter constructs a Router with default Ping, Pong, and TestEcho handlers.
 func NewRouter(minProtocol, currentProtocol uint32) *Router {
 	r := &Router{
 		handlers:             make(map[fbWS.Payload]Handler),
@@ -40,12 +36,10 @@ func NewRouter(minProtocol, currentProtocol uint32) *Router {
 	return r
 }
 
-// Register maps a FlatBuffers Payload union variant to a handler.
 func (r *Router) Register(payloadType fbWS.Payload, handler Handler) {
 	r.handlers[payloadType] = handler
 }
 
-// Dispatch decodes and routes a FlatBuffers envelope payload.
 func (r *Router) Dispatch(ctx context.Context, s *Session, rawEnvelope []byte) error {
 	if len(rawEnvelope) < 4 {
 		return errors.New("ws: invalid envelope length")
@@ -122,7 +116,6 @@ func (r *Router) handleTestEcho(ctx context.Context, s *Session, env *fbWS.Envel
 	return s.Send(b.FinishedBytes())
 }
 
-// BuildErrorEnvelope constructs an encrypted Error FlatBuffers envelope.
 func BuildErrorEnvelope(currentProtocol uint32, msgID, corrID uint64, code fbWS.ErrorCode, msg string, retryable bool, retryAfterMs uint32) []byte {
 	b := flatbuffers.NewBuilder(256)
 	msgOffset := b.CreateString(msg)

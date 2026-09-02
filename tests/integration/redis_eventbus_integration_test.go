@@ -54,23 +54,20 @@ func TestRedisEventBus_RealRedisTwoInstanceRevocations(t *testing.T) {
 		t.Fatalf("failed to start event bus listeners: %v", err)
 	}
 
-	// Give Redis subscription a brief moment to register
 	time.Sleep(50 * time.Millisecond)
 
 	tsB := httptest.NewServer(serverB)
 	defer tsB.Close()
 
-	// 1. Client connects to Instance B
 	testUserID := uuid.New()
 	testSessionID := uuid.New()
-	testDeviceID := uuid.New()
 	testTicketID := "remote-redis-revocation-ticket"
 
 	_ = ticketRepoB.Create(context.Background(), &wsticket.Ticket{
 		ID:        testTicketID,
 		UserID:    testUserID,
 		SessionID: testSessionID,
-		DeviceID:  &testDeviceID,
+		DeviceID:  new(uuid.New()),
 		ExpiresAt: time.Now().Add(1 * time.Minute),
 	}, 1*time.Minute)
 
@@ -89,7 +86,6 @@ func TestRedisEventBus_RealRedisTwoInstanceRevocations(t *testing.T) {
 		t.Fatalf("expected 1 active connection on Instance B, got %d", registryB.Count())
 	}
 
-	// 2. Instance A publishes revocation event via busA (Redis Pub/Sub)
 	err = busA.Publish(context.Background(), domainEB.TopicSessionRevoked, domainEB.Event{
 		Topic:     domainEB.TopicSessionRevoked,
 		Payload:   testSessionID,
@@ -99,7 +95,6 @@ func TestRedisEventBus_RealRedisTwoInstanceRevocations(t *testing.T) {
 		t.Fatalf("failed to publish revocation from Instance A: %v", err)
 	}
 
-	// 3. Client on Instance B should be closed
 	_, _, err = conn.ReadMessage()
 	if err == nil {
 		t.Fatalf("expected connection to be closed after remote revocation event")

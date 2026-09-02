@@ -106,6 +106,12 @@
   outside `development`/`test`, following the pattern already used for
   `TRUSTED_PROXIES`, `METRICS_ALLOWED_CIDRS`, and the origin wildcard check
   in `LoadFromEnv`.
+- Any new secret/key-ring format needs a matching subcommand under
+  `internal/cli/keys.go` (mirroring `hmac`/`jwt`/`wireauth`) so operators
+  generate it in the exact shape its parser expects, instead of hand-rolling
+  values with `openssl`/shell one-liners that silently produce the wrong
+  length or encoding. Update `.env.example` and the README "Generating
+  secrets" section in the same change.
 
 ## Tests and fixtures
 

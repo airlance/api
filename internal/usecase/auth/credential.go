@@ -14,7 +14,6 @@ import (
 	"airlance.org/api/internal/domain/passkey"
 )
 
-// BeginRegisterCredential starts adding a new passkey credential to an existing user account.
 func (u *Usecase) BeginRegisterCredential(ctx context.Context, userID uuid.UUID, ip string) (*SignupOptionsResult, error) {
 	if err := u.checkChallengeRateLimit(ctx, fmt.Sprintf("auth:reg_opts:user:%s", userID.String())); err != nil {
 		return nil, err
@@ -54,7 +53,6 @@ func (u *Usecase) BeginRegisterCredential(ctx context.Context, userID uuid.UUID,
 	}, nil
 }
 
-// FinishRegisterCredential verifies and attaches a new passkey credential to the user.
 func (u *Usecase) FinishRegisterCredential(
 	ctx context.Context,
 	userID, challengeID uuid.UUID,
@@ -136,7 +134,6 @@ func (u *Usecase) FinishRegisterCredential(
 	return newCred, nil
 }
 
-// DeleteCredential removes a passkey credential, verifying ownership and ensuring at least one credential remains.
 func (u *Usecase) DeleteCredential(ctx context.Context, userID, credentialID uuid.UUID, ip, userAgent, requestID string) error {
 	if err := u.checkChallengeRateLimit(ctx, fmt.Sprintf("auth:del_cred:user:%s", userID.String())); err != nil {
 		return err

@@ -1,4 +1,3 @@
-// Package http provides HTTP route handlers, API endpoints, and server lifecycle management.
 package http
 
 import (
@@ -15,14 +14,12 @@ import (
 	"airlance.org/api/internal/infrastructure/logger"
 )
 
-// HealthHandlers provides health check probes.
 type HealthHandlers struct {
 	pool  *pgxpool.Pool
 	redis *goredis.Client
 	cfg   *config.Config
 }
 
-// NewHealthHandlers constructs HealthHandlers.
 func NewHealthHandlers(pool *pgxpool.Pool, redis *goredis.Client, cfg *config.Config) *HealthHandlers {
 	return &HealthHandlers{
 		pool:  pool,
@@ -31,7 +28,6 @@ func NewHealthHandlers(pool *pgxpool.Pool, redis *goredis.Client, cfg *config.Co
 	}
 }
 
-// Livez handles process liveness probe.
 func (h *HealthHandlers) Livez(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -41,7 +37,6 @@ func (h *HealthHandlers) Livez(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Readyz handles readiness probe checking Postgres, Redis, and schema version compatibility.
 func (h *HealthHandlers) Readyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
@@ -49,7 +44,6 @@ func (h *HealthHandlers) Readyz(w http.ResponseWriter, r *http.Request) {
 	checks := make(map[string]string)
 	isReady := true
 
-	// 1. Check Postgres
 	if h.pool != nil {
 		if err := h.pool.Ping(ctx); err != nil {
 			logger.FromContext(r.Context()).Error(err, "Postgres readiness check failed")
@@ -62,7 +56,6 @@ func (h *HealthHandlers) Readyz(w http.ResponseWriter, r *http.Request) {
 		checks["postgres"] = "disabled"
 	}
 
-	// 2. Check Redis
 	if h.redis != nil {
 		if err := h.redis.Ping(ctx).Err(); err != nil {
 			logger.FromContext(r.Context()).Error(err, "Redis readiness check failed")
@@ -75,7 +68,6 @@ func (h *HealthHandlers) Readyz(w http.ResponseWriter, r *http.Request) {
 		checks["redis"] = "disabled"
 	}
 
-	// 3. Check Schema version range compatibility
 	if h.cfg.DatabaseDSN != "" {
 		schemaVersion, dirty, err := database.GetCurrentSchemaVersion(h.cfg.DatabaseDSN, "migrations")
 		if err != nil {
@@ -119,7 +111,6 @@ func (h *HealthHandlers) Readyz(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Healthz legacy combined health endpoint.
 func (h *HealthHandlers) Healthz(w http.ResponseWriter, r *http.Request) {
 	h.Readyz(w, r)
 }

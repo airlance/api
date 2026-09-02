@@ -1,4 +1,3 @@
-// Package middleware provides HTTP middlewares for client IP, authentication, rate limiting, and telemetry.
 package middleware
 
 import (
@@ -10,7 +9,6 @@ import (
 
 type clientIPKey struct{}
 
-// ClientIPMiddleware extracts and validates the real client IP based on trusted proxy configuration.
 func ClientIPMiddleware(trustedProxies []*net.IPNet) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +19,6 @@ func ClientIPMiddleware(trustedProxies []*net.IPNet) func(http.Handler) http.Han
 	}
 }
 
-// GetClientIP extracts the resolved client IP from context.
 func GetClientIP(ctx context.Context) string {
 	if ip, ok := ctx.Value(clientIPKey{}).(string); ok && ip != "" {
 		return ip
@@ -29,12 +26,10 @@ func GetClientIP(ctx context.Context) string {
 	return "127.0.0.1"
 }
 
-// SetClientIP returns a new context with the specified client IP (useful in testing).
 func SetClientIP(ctx context.Context, ip string) context.Context {
 	return context.WithValue(ctx, clientIPKey{}, ip)
 }
 
-// IsTrustedProxy checks whether a given remote address belongs to one of the configured trusted proxy CIDRs.
 func IsTrustedProxy(remoteAddr string, trustedProxies []*net.IPNet) bool {
 	remoteHost, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
@@ -47,7 +42,6 @@ func IsTrustedProxy(remoteAddr string, trustedProxies []*net.IPNet) bool {
 	return isIPTrusted(remoteIP, trustedProxies)
 }
 
-// IsIPInCIDRs reports whether ip belongs to one of the configured CIDRs.
 func IsIPInCIDRs(ip string, cidrs []*net.IPNet) bool {
 	parsed := net.ParseIP(ip)
 	return parsed != nil && isIPTrusted(parsed, cidrs)
@@ -63,12 +57,10 @@ func resolveClientIP(r *http.Request, trustedProxies []*net.IPNet) string {
 		return remoteHost
 	}
 
-	// If remote IP is not a trusted proxy, do not trust any forwarding headers.
 	if !isIPTrusted(remoteIP, trustedProxies) {
 		return remoteIP.String()
 	}
 
-	// Check X-Forwarded-For (leftmost untrusted IP or first IP)
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		ips := strings.Split(xff, ",")
 		for i := len(ips) - 1; i >= 0; i-- {
@@ -78,7 +70,7 @@ func resolveClientIP(r *http.Request, trustedProxies []*net.IPNet) string {
 				return candidateIP.String()
 			}
 		}
-		// If all were trusted proxies, return the first
+
 		if len(ips) > 0 {
 			first := strings.TrimSpace(ips[0])
 			if net.ParseIP(first) != nil {
@@ -87,7 +79,6 @@ func resolveClientIP(r *http.Request, trustedProxies []*net.IPNet) string {
 		}
 	}
 
-	// Check X-Real-IP
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
 		realIP := strings.TrimSpace(xri)
 		if parsed := net.ParseIP(realIP); parsed != nil {

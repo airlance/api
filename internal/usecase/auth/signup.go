@@ -15,7 +15,6 @@ import (
 	"airlance.org/api/internal/domain/user"
 )
 
-// BeginSignup initiates passkey registration for a new user.
 func (u *Usecase) BeginSignup(ctx context.Context, ip string) (*SignupOptionsResult, error) {
 	if ip != "" {
 		if err := u.checkChallengeRateLimit(ctx, fmt.Sprintf("auth:signup_opts:ip:%s", ip)); err != nil {
@@ -50,7 +49,6 @@ func (u *Usecase) BeginSignup(ctx context.Context, ip string) (*SignupOptionsRes
 	}, nil
 }
 
-// FinishSignup validates passkey creation, provisions the user, identity, credential, and session.
 func (u *Usecase) FinishSignup(
 	ctx context.Context,
 	challengeID uuid.UUID,
@@ -66,7 +64,6 @@ func (u *Usecase) FinishSignup(
 		}
 	}
 
-	// 1. Atomically consume challenge
 	ch, err := u.challengeRepo.ConsumeByID(ctx, challengeID)
 	if err != nil {
 		_ = u.recordAuthFailure(ctx, nil, "signup", ip, userAgent, requestID, "invalid_or_consumed_challenge")
@@ -79,7 +76,6 @@ func (u *Usecase) FinishSignup(
 
 	tempUser := &user.User{ID: *ch.UserID, CreatedAt: time.Now()}
 
-	// 2. Validate WebAuthn response via service port
 	cred, err := u.webAuthnService.FinishRegistration(tempUser, nil, ch.SessionData, responsePayload)
 	if err != nil {
 		_ = u.recordAuthFailure(ctx, ch.UserID, "signup", ip, userAgent, requestID, err.Error())
@@ -117,7 +113,6 @@ func (u *Usecase) FinishSignup(
 		}
 	}
 
-	// 3. Atomically persist user, identity, credential, and audit log
 	err = u.txManager.WithTx(ctx, func(txCtx context.Context) error {
 		if err := u.userRepo.Create(txCtx, newUser); err != nil {
 			return err
@@ -152,7 +147,6 @@ func (u *Usecase) FinishSignup(
 		return nil, fmt.Errorf("auth: persist signup tx failed: %w", err)
 	}
 
-	// 4. Create Session
 	token, sess, err := u.sessionUsecase.CreateSession(ctx, newUser.ID, newIdent.ID, deviceID, ip, userAgent, requestID)
 	if err != nil {
 		return nil, fmt.Errorf("auth: create session failed: %w", err)

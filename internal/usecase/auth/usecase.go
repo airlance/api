@@ -13,7 +13,6 @@ import (
 	sessionUC "airlance.org/api/internal/usecase/session"
 )
 
-// Usecase provides provider-agnostic and passkey-specific authentication use cases.
 type Usecase struct {
 	userRepo          user.Repository
 	identityRepo      identity.Repository
@@ -29,7 +28,6 @@ type Usecase struct {
 	deviceHMACKeyRing crypto.KeyRing
 }
 
-// NewUsecase constructs an Auth Usecase.
 func NewUsecase(
 	userRepo user.Repository,
 	identityRepo identity.Repository,

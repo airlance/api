@@ -1,4 +1,3 @@
-// Package database manages PostgreSQL connection pooling and atomic transactions.
 package database
 
 import (
@@ -13,18 +12,15 @@ import (
 )
 
 var (
-	// ErrTxNotFound is returned when an expected transaction is not present in context.
 	ErrTxNotFound = errors.New("database: transaction not found in context")
 )
 
-// DBExecutor represents common query execution methods shared by pgxpool.Pool and pgx.Tx.
 type DBExecutor interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// ConnectPostgres connects to PostgreSQL and verifies connectivity.
 func ConnectPostgres(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {

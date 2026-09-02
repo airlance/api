@@ -7,7 +7,6 @@ import (
 	"airlance.org/api/internal/domain/session"
 )
 
-// Validate verifies a session token and returns the active Session.
 func (u *Usecase) Validate(ctx context.Context, token string) (*session.Session, error) {
 	if token == "" {
 		return nil, ErrInvalidToken

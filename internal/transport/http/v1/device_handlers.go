@@ -10,17 +10,14 @@ import (
 	"airlance.org/api/internal/usecase/auth"
 )
 
-// DeviceHandlers handles device listing and revocation endpoints.
 type DeviceHandlers struct {
 	authUC *auth.Usecase
 }
 
-// NewDeviceHandlers constructs DeviceHandlers.
 func NewDeviceHandlers(authUC *auth.Usecase) *DeviceHandlers {
 	return &DeviceHandlers{authUC: authUC}
 }
 
-// ListDevices handles GET /api/v1/devices.
 func (h *DeviceHandlers) ListDevices(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	if userID == uuid.Nil {
@@ -37,7 +34,6 @@ func (h *DeviceHandlers) ListDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"devices": devices})
 }
 
-// RevokeDevice handles DELETE /api/v1/devices/{id}.
 func (h *DeviceHandlers) RevokeDevice(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	if userID == uuid.Nil {

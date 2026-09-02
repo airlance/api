@@ -13,7 +13,6 @@ import (
 	"airlance.org/api/internal/domain/crypto"
 )
 
-// IssueToken verifies client credentials and mints a short-lived Ed25519 JWT.
 func (u *Usecase) IssueToken(ctx context.Context, clientID uuid.UUID, secretPlaintext string) (string, time.Time, error) {
 	client, err := u.clientRepo.GetByID(ctx, clientID)
 	if err != nil {

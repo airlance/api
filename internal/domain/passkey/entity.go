@@ -8,17 +8,12 @@ import (
 )
 
 var (
-	// ErrCredentialNotFound is returned when a passkey credential cannot be found.
 	ErrCredentialNotFound = errors.New("passkey: credential not found")
-	// ErrChallengeNotFound is returned when a challenge does not exist or was already consumed.
-	ErrChallengeNotFound = errors.New("passkey: challenge not found or already consumed")
-	// ErrChallengeExpired is returned when a challenge is consumed after its expiration.
-	ErrChallengeExpired = errors.New("passkey: challenge expired")
-	// ErrVerificationFailed is returned when WebAuthn verification fails.
+	ErrChallengeNotFound  = errors.New("passkey: challenge not found or already consumed")
+	ErrChallengeExpired   = errors.New("passkey: challenge expired")
 	ErrVerificationFailed = errors.New("passkey: verification failed")
 )
 
-// ChallengeType denotes the intended purpose of the WebAuthn ceremony.
 type ChallengeType string
 
 const (
@@ -27,7 +22,6 @@ const (
 	ChallengeTypeAuthentication ChallengeType = "authentication"
 )
 
-// Credential represents a registered WebAuthn credential on a user's authenticator.
 type Credential struct {
 	ID           uuid.UUID
 	IdentityID   uuid.UUID
@@ -40,7 +34,6 @@ type Credential struct {
 	LastUsedAt   *time.Time
 }
 
-// Challenge represents an ephemeral ceremony challenge state.
 type Challenge struct {
 	ID          uuid.UUID
 	UserID      *uuid.UUID
@@ -49,7 +42,6 @@ type Challenge struct {
 	ExpiresAt   time.Time
 }
 
-// VerifiedCredential represents the validated passkey credential resulting from registration or login verification.
 type VerifiedCredential struct {
 	CredentialID []byte
 	PublicKey    []byte

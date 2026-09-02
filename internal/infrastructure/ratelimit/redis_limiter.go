@@ -1,4 +1,3 @@
-// Package ratelimit provides an atomic multi-window Redis rate limiter and key registries.
 package ratelimit
 
 import (
@@ -12,17 +11,14 @@ import (
 	domainRL "airlance.org/api/internal/domain/ratelimit"
 )
 
-// RedisLimiter implements domainRL.Limiter using atomic Redis Lua scripts.
 type RedisLimiter struct {
 	client *goredis.Client
 }
 
-// NewRedisLimiter constructs a RedisLimiter.
 func NewRedisLimiter(client *goredis.Client) *RedisLimiter {
 	return &RedisLimiter{client: client}
 }
 
-// allowLuaScript atomically inspects and increments multiple window limits.
 const allowLuaScript = `
 local key_prefix = KEYS[1]
 local now_ms = tonumber(ARGV[1])
@@ -85,7 +81,6 @@ end
 return results
 `
 
-// usageLuaScript inspects current usage across multiple windows without incrementing.
 const usageLuaScript = `
 local key_prefix = KEYS[1]
 local now_ms = tonumber(ARGV[1])
@@ -118,7 +113,6 @@ end
 return results
 `
 
-// Allow checks and atomically records rate limit attempts.
 func (r *RedisLimiter) Allow(ctx context.Context, key string, limits []domainRL.Limit) ([]domainRL.Result, error) {
 	if len(limits) == 0 {
 		return nil, nil
@@ -145,7 +139,6 @@ func (r *RedisLimiter) Allow(ctx context.Context, key string, limits []domainRL.
 	return parseLuaResults(val, limits, now)
 }
 
-// Usage inspects current rate limit usage without incrementing counts.
 func (r *RedisLimiter) Usage(ctx context.Context, key string, limits []domainRL.Limit) ([]domainRL.Result, error) {
 	if len(limits) == 0 {
 		return nil, nil

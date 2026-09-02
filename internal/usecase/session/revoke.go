@@ -14,7 +14,6 @@ import (
 	"airlance.org/api/internal/domain/session"
 )
 
-// Revoke invalidates a session and publishes a session.revoked event.
 func (u *Usecase) Revoke(ctx context.Context, token string, ip, userAgent, requestID string) error {
 	if token == "" {
 		return ErrInvalidToken
@@ -72,7 +71,6 @@ func (u *Usecase) Revoke(ctx context.Context, token string, ip, userAgent, reque
 	return nil
 }
 
-// RevokeAllForUser invalidates all sessions for a user and publishes a user.sessions_revoked event.
 func (u *Usecase) RevokeAllForUser(ctx context.Context, userID uuid.UUID, ip, userAgent, requestID string) error {
 	now := time.Now()
 	err := u.txManager.WithTx(ctx, func(txCtx context.Context) error {

@@ -1,4 +1,3 @@
-// Package logger provides structured, categorized logging for the application.
 package logger
 
 import (
@@ -13,7 +12,6 @@ import (
 
 type ctxKey struct{}
 
-// Category represents a named logging subsystem.
 type Category string
 
 const (
@@ -26,12 +24,10 @@ const (
 	CategoryDB        Category = "database"
 )
 
-// Logger wraps a zerolog.Logger instance with helpers.
 type Logger struct {
 	z zerolog.Logger
 }
 
-// New creates a new Logger configured by level and format.
 func New(levelStr, format string) *Logger {
 	level, err := zerolog.ParseLevel(strings.ToLower(levelStr))
 	if err != nil {
@@ -55,26 +51,22 @@ func New(levelStr, format string) *Logger {
 	return &Logger{z: z}
 }
 
-// Named returns a sub-logger tagged with a specific subsystem category.
 func (l *Logger) Named(category Category) *Logger {
 	return &Logger{
 		z: l.z.With().Str("category", string(category)).Logger(),
 	}
 }
 
-// WithField adds a key-value pair to the logger.
 func (l *Logger) WithField(key string, val any) *Logger {
 	return &Logger{
 		z: l.z.With().Interface(key, val).Logger(),
 	}
 }
 
-// WithContext returns a new Context with the logger embedded.
 func (l *Logger) WithContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, ctxKey{}, l)
 }
 
-// FromContext extracts the logger from Context, or returns a default logger.
 func FromContext(ctx context.Context) *Logger {
 	if val, ok := ctx.Value(ctxKey{}).(*Logger); ok && val != nil {
 		return val
@@ -82,25 +74,21 @@ func FromContext(ctx context.Context) *Logger {
 	return New("info", "json")
 }
 
-// Debug logs a debug-level message.
 func (l *Logger) Debug(msg string, fields ...any) {
 	event := l.z.Debug()
 	l.applyFields(event, fields...).Msg(msg)
 }
 
-// Info logs an info-level message.
 func (l *Logger) Info(msg string, fields ...any) {
 	event := l.z.Info()
 	l.applyFields(event, fields...).Msg(msg)
 }
 
-// Warn logs a warning-level message.
 func (l *Logger) Warn(msg string, fields ...any) {
 	event := l.z.Warn()
 	l.applyFields(event, fields...).Msg(msg)
 }
 
-// Error logs an error-level message.
 func (l *Logger) Error(err error, msg string, fields ...any) {
 	event := l.z.Error()
 	if err != nil {

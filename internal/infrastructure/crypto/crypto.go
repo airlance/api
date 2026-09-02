@@ -1,4 +1,3 @@
-// Package crypto provides cryptographically secure token generation, hashing, and HMAC functions.
 package crypto
 
 import (
@@ -12,7 +11,6 @@ import (
 	"airlance.org/api/internal/config"
 )
 
-// GenerateOpaqueToken generates a secure random token and its SHA-256 hash.
 func GenerateOpaqueToken(byteLen int) (plaintext string, tokenHash []byte, err error) {
 	if byteLen < 16 {
 		byteLen = 32
@@ -27,7 +25,6 @@ func GenerateOpaqueToken(byteLen int) (plaintext string, tokenHash []byte, err e
 	return plaintext, h, nil
 }
 
-// HashToken computes the SHA-256 hash of a plaintext token.
 func HashToken(token string) []byte {
 	sum := sha256.Sum256([]byte(token))
 	res := make([]byte, len(sum))
@@ -35,19 +32,16 @@ func HashToken(token string) []byte {
 	return res
 }
 
-// ConstantTimeCompareBytes compares two byte slices in constant time.
 func ConstantTimeCompareBytes(a, b []byte) bool {
 	return subtle.ConstantTimeCompare(a, b) == 1
 }
 
-// ComputeHMAC computes HMAC-SHA256 over data with the given key.
 func ComputeHMAC(data, key []byte) []byte {
 	mac := hmac.New(sha256.New, key)
 	mac.Write(data)
 	return mac.Sum(nil)
 }
 
-// ComputeKeyRingHMAC computes HMAC using the current key in the keyring.
 func ComputeKeyRingHMAC(data []byte, ring config.KeyRing) ([]byte, uint16, error) {
 	key, ok := ring.Keys[ring.CurrentKeyID]
 	if !ok {
@@ -56,10 +50,7 @@ func ComputeKeyRingHMAC(data []byte, ring config.KeyRing) ([]byte, uint16, error
 	return ComputeHMAC(data, key), ring.CurrentKeyID, nil
 }
 
-// VerifyKeyRingHMAC checks if the data matches the hash under any key in the keyring.
-// Returns (matched, keyID, needsRotation).
 func VerifyKeyRingHMAC(data, expectedHash []byte, ring config.KeyRing) (bool, uint16, bool) {
-	// First check current key
 	if currentKey, ok := ring.Keys[ring.CurrentKeyID]; ok {
 		currentMAC := ComputeHMAC(data, currentKey)
 		if ConstantTimeCompareBytes(currentMAC, expectedHash) {
@@ -67,7 +58,6 @@ func VerifyKeyRingHMAC(data, expectedHash []byte, ring config.KeyRing) (bool, ui
 		}
 	}
 
-	// Check older keys in ring
 	for kid, key := range ring.Keys {
 		if kid == ring.CurrentKeyID {
 			continue

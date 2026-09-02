@@ -12,7 +12,6 @@ import (
 	"airlance.org/api/internal/domain/session"
 )
 
-// CreateSession creates a new authenticated session and atomically writes an audit record.
 func (u *Usecase) CreateSession(
 	ctx context.Context,
 	userID, identityID uuid.UUID,

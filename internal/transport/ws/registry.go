@@ -1,4 +1,3 @@
-// Package ws implements the encrypted WebSocket transport, session lifecycle, and application router.
 package ws
 
 import (
@@ -11,17 +10,12 @@ import (
 )
 
 var (
-	// ErrServerDraining is returned when the server is draining and refusing new WebSocket upgrades.
-	ErrServerDraining = errors.New("ws: server is draining")
-	// ErrMaxConnectionsReached is returned when the global WebSocket limit is reached.
-	ErrMaxConnectionsReached = errors.New("ws: global connection limit reached")
-	// ErrMaxConnectionsPerUserReached is returned when a user has too many active connections.
+	ErrServerDraining               = errors.New("ws: server is draining")
+	ErrMaxConnectionsReached        = errors.New("ws: global connection limit reached")
 	ErrMaxConnectionsPerUserReached = errors.New("ws: user connection limit reached")
-	// ErrMaxConnectionsPerIPReached is returned when an IP has too many active connections.
-	ErrMaxConnectionsPerIPReached = errors.New("ws: ip connection limit reached")
+	ErrMaxConnectionsPerIPReached   = errors.New("ws: ip connection limit reached")
 )
 
-// ConnectionRegistry tracks in-memory WebSocket sessions active on this server instance.
 type ConnectionRegistry interface {
 	Add(session *Session)
 	Remove(session *Session)
@@ -37,35 +31,30 @@ type ConnectionRegistry interface {
 	CloseAll(reason string)
 }
 
-// LocalConnectionRegistry implements ConnectionRegistry.
 type LocalConnectionRegistry struct {
 	mu       sync.RWMutex
 	sessions map[*Session]struct{}
 	draining bool
 }
 
-// NewConnectionRegistry constructs a LocalConnectionRegistry.
 func NewConnectionRegistry() *LocalConnectionRegistry {
 	return &LocalConnectionRegistry{
 		sessions: make(map[*Session]struct{}),
 	}
 }
 
-// Add registers an active session unconditionally.
 func (r *LocalConnectionRegistry) Add(s *Session) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.sessions[s] = struct{}{}
 }
 
-// Remove unregisters a closed session.
 func (r *LocalConnectionRegistry) Remove(s *Session) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.sessions, s)
 }
 
-// TryRegister performs atomic checking against limits and registers the session.
 func (r *LocalConnectionRegistry) TryRegister(s *Session, maxGlobal, maxPerUser, maxPerIP int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -101,7 +90,6 @@ func (r *LocalConnectionRegistry) TryRegister(s *Session, maxGlobal, maxPerUser,
 	return nil
 }
 
-// ForUser returns all active sessions for a user on this instance.
 func (r *LocalConnectionRegistry) ForUser(userID uuid.UUID) []*Session {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -115,7 +103,6 @@ func (r *LocalConnectionRegistry) ForUser(userID uuid.UUID) []*Session {
 	return res
 }
 
-// ForSession returns all connections bound to a specific session ID.
 func (r *LocalConnectionRegistry) ForSession(sessionID uuid.UUID) []*Session {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -129,7 +116,6 @@ func (r *LocalConnectionRegistry) ForSession(sessionID uuid.UUID) []*Session {
 	return res
 }
 
-// ForDevice returns all connections bound to a specific device ID.
 func (r *LocalConnectionRegistry) ForDevice(deviceID uuid.UUID) []*Session {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -143,14 +129,12 @@ func (r *LocalConnectionRegistry) ForDevice(deviceID uuid.UUID) []*Session {
 	return res
 }
 
-// Count returns the number of active connections.
 func (r *LocalConnectionRegistry) Count() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.sessions)
 }
 
-// CountForIP returns active connections from a given IP address.
 func (r *LocalConnectionRegistry) CountForIP(ip string) int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -164,14 +148,12 @@ func (r *LocalConnectionRegistry) CountForIP(ip string) int {
 	return count
 }
 
-// StopAccepting marks registry as draining so subsequent upgrade attempts are denied.
 func (r *LocalConnectionRegistry) StopAccepting() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.draining = true
 }
 
-// Drain sends close frames (Going Away 1001) to all connections, waits a bounded grace period, then force closes.
 func (r *LocalConnectionRegistry) Drain(timeout time.Duration) {
 	r.StopAccepting()
 
@@ -192,13 +174,11 @@ func (r *LocalConnectionRegistry) Drain(timeout time.Duration) {
 		}
 	}
 
-	// Wait bounded grace period
 	time.Sleep(timeout)
 
 	r.CloseAll("server_draining")
 }
 
-// CloseAll terminates all active connections with a close reason.
 func (r *LocalConnectionRegistry) CloseAll(reason string) {
 	r.mu.RLock()
 	all := make([]*Session, 0, len(r.sessions))

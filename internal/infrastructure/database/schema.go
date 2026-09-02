@@ -10,7 +10,6 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-// GetCurrentSchemaVersion inspects the PostgreSQL migration version.
 func GetCurrentSchemaVersion(dsn, dir string) (uint, bool, error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {

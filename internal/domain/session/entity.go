@@ -8,17 +8,12 @@ import (
 )
 
 var (
-	// ErrNotFound is returned when a session cannot be located.
-	ErrNotFound = errors.New("session: not found")
-	// ErrExpired is returned when a session has passed its expiration time.
-	ErrExpired = errors.New("session: expired")
-	// ErrRevoked is returned when a session has been revoked.
-	ErrRevoked = errors.New("session: revoked")
-	// ErrInvalidToken is returned when a presented session token is malformed.
+	ErrNotFound     = errors.New("session: not found")
+	ErrExpired      = errors.New("session: expired")
+	ErrRevoked      = errors.New("session: revoked")
 	ErrInvalidToken = errors.New("session: invalid token")
 )
 
-// Session represents an authenticated user session.
 type Session struct {
 	ID         uuid.UUID
 	TokenHash  []byte
@@ -30,7 +25,6 @@ type Session struct {
 	RevokedAt  *time.Time
 }
 
-// IsValid checks whether the session is active, unexpired, and unrevoked.
 func (s *Session) IsValid() bool {
 	if s.RevokedAt != nil {
 		return false

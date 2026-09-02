@@ -8,7 +8,6 @@ import (
 	"airlance.org/api/internal/domain/tx"
 )
 
-// Usecase provides API client management and token issuance.
 type Usecase struct {
 	clientRepo  apiclient.Repository
 	tierRepo    apiclient.TierRepository
@@ -19,7 +18,6 @@ type Usecase struct {
 	serviceName string
 }
 
-// NewUsecase constructs an API Auth Usecase.
 func NewUsecase(
 	clientRepo apiclient.Repository,
 	tierRepo apiclient.TierRepository,

@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Repository defines storage operations for devices.
 type Repository interface {
 	Create(ctx context.Context, d *Device) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Device, error)

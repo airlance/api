@@ -9,7 +9,6 @@ import (
 	"airlance.org/api/internal/domain/tx"
 )
 
-// Usecase defines session management operations.
 type Usecase struct {
 	sessionRepo session.Repository
 	auditRepo   audit.Repository
@@ -18,7 +17,6 @@ type Usecase struct {
 	sessionTTL  time.Duration
 }
 
-// NewUsecase constructs a Session Usecase.
 func NewUsecase(
 	sessionRepo session.Repository,
 	auditRepo audit.Repository,

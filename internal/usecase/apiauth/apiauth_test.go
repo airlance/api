@@ -120,7 +120,6 @@ func TestAPIAuthUsecase_CreateClientAndIssueToken(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.New()
 
-	// 1. Create client
 	res, err := uc.CreateClient(ctx, userID, "My Test Client", "127.0.0.1", "test-agent", "req-1")
 	if err != nil {
 		t.Fatalf("unexpected create client error: %v", err)
@@ -129,7 +128,6 @@ func TestAPIAuthUsecase_CreateClientAndIssueToken(t *testing.T) {
 		t.Fatalf("expected secret and client object")
 	}
 
-	// 2. Issue token
 	tokenStr, exp, err := uc.IssueToken(ctx, res.Client.ID, res.Secret)
 	if err != nil {
 		t.Fatalf("unexpected issue token error: %v", err)
@@ -138,18 +136,15 @@ func TestAPIAuthUsecase_CreateClientAndIssueToken(t *testing.T) {
 		t.Errorf("invalid token string or expiration")
 	}
 
-	// 3. Issue token with wrong secret
 	_, _, err = uc.IssueToken(ctx, res.Client.ID, "wrong-secret")
 	if err == nil {
 		t.Errorf("expected error with wrong client secret")
 	}
 
-	// 4. Revoke client
 	if err := uc.RevokeClient(ctx, userID, res.Client.ID, "127.0.0.1", "test-agent", "req-2"); err != nil {
 		t.Fatalf("unexpected revoke error: %v", err)
 	}
 
-	// 5. Issue token for revoked client
 	_, _, err = uc.IssueToken(ctx, res.Client.ID, res.Secret)
 	if err == nil {
 		t.Errorf("expected error issuing token for revoked client")

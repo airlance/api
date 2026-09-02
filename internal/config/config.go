@@ -18,90 +18,62 @@ import (
 )
 
 var (
-	// ErrInvalidConfig is returned when configuration values fail validation.
 	ErrInvalidConfig = errors.New("config: invalid configuration")
 )
 
-// KeyRing alias to domain KeyRing.
 type KeyRing = crypto.KeyRing
 
-// Ed25519KeyRing represents versioned Ed25519 signing keys for external API JWTs.
 type Ed25519KeyRing struct {
 	CurrentKID  string
 	PrivateKeys map[string]ed25519.PrivateKey
 	PublicKeys  map[string]ed25519.PublicKey
 }
 
-// Config contains all service configuration settings.
 type Config struct {
-	// Service & Network
-	Env         string
-	HTTPPort    int
-	ServiceName string
-
-	// TLS Listener & Termination
-	TLSListenerEnabled    bool
-	TLSCertFile           string
-	TLSKeyFile            string
-	TLSTerminationIngress bool
-	RequireTLS            bool
-
-	// Database & Cache
-	DatabaseDSN string
-	RedisURL    string
-
-	// Schema bounds for rolling deployments
-	MinSchemaVersion uint
-	MaxSchemaVersion uint
-
-	// Logging
-	LogLevel  string
-	LogFormat string // "json" or "console"
-
-	// Trusted Proxies for Client IP & TLS termination resolution
-	TrustedProxies []*net.IPNet
-
-	// Security: WebAuthn & WS Origins
-	WebAuthnRPID          string
-	WebAuthnRPDisplayName string
-	WebAuthnRPOrigins     []string
-	AllowedWSOrigins      []string
-
-	// Security: Sessions & Tokens
-	SessionTTL  time.Duration
-	WSTicketTTL time.Duration
-	APITokenTTL time.Duration
-
-	// Security: Key Rings
+	Env                     string
+	HTTPPort                int
+	ServiceName             string
+	TLSListenerEnabled      bool
+	TLSCertFile             string
+	TLSKeyFile              string
+	TLSTerminationIngress   bool
+	RequireTLS              bool
+	DatabaseDSN             string
+	RedisURL                string
+	MinSchemaVersion        uint
+	MaxSchemaVersion        uint
+	LogLevel                string
+	LogFormat               string
+	TrustedProxies          []*net.IPNet
+	MetricsAllowedCIDRs     []*net.IPNet
+	WebAuthnRPID            string
+	WebAuthnRPDisplayName   string
+	WebAuthnRPOrigins       []string
+	AllowedWSOrigins        []string
+	SessionTTL              time.Duration
+	WSTicketTTL             time.Duration
+	APITokenTTL             time.Duration
 	DeviceHMACKeyRing       KeyRing
 	AuditSubjectHMACKeyRing KeyRing
 	JWTKeyRing              Ed25519KeyRing
-
-	// Security: Wireauth RSA
-	WireauthPrivateKey     *rsa.PrivateKey
-	WireauthPrivateKeyPath string
-
-	// Server-side timeouts & limits
+	WireauthPrivateKey      *rsa.PrivateKey
+	WireauthPrivateKeyPath  string
 	MaxHTTPBodyBytes        int64
 	MaxWSFrameBytes         int64
 	MaxWSConnections        int
 	MaxWSConnectionsPerIP   int
 	MaxWSConnectionsPerUser int
 	MaxWSSendQueue          int
-
-	HTTPReadTimeout     time.Duration
-	HTTPWriteTimeout    time.Duration
-	HTTPIdleTimeout     time.Duration
-	WSPreUpgradeTimeout time.Duration
-	WSHandshakeTimeout  time.Duration
-	WSIdleTimeout       time.Duration
-
-	// Protocol versioning
-	MinSupportedProtocol uint32
-	CurrentProtocol      uint32
+	HTTPReadTimeout         time.Duration
+	HTTPWriteTimeout        time.Duration
+	HTTPIdleTimeout         time.Duration
+	WSPreUpgradeTimeout     time.Duration
+	WSHandshakeTimeout      time.Duration
+	WSIdleTimeout           time.Duration
+	MinSupportedProtocol    uint32
+	CurrentProtocol         uint32
 }
 
-// LoadFromEnv loads configuration from environment variables with sensible defaults.
 func LoadFromEnv() (*Config, error) {
 	env := getEnv("APP_ENV", "development")
 	isDevOrTest := env == "development" || env == "test"
@@ -144,15 +116,18 @@ func LoadFromEnv() (*Config, error) {
 		CurrentProtocol:         uint32(getEnvInt("CURRENT_PROTOCOL", 1)),
 	}
 
-	// Parse trusted proxies
 	proxiesStr := getEnv("TRUSTED_PROXIES", "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
 	trusted, err := parseCIDRs(proxiesStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid trusted proxies: %v", ErrInvalidConfig, err)
 	}
 	cfg.TrustedProxies = trusted
+	metricsCIDRs, err := parseCIDRs(getEnv("METRICS_ALLOWED_CIDRS", "127.0.0.1/32,::1/128"))
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid metrics allowed CIDRs: %v", ErrInvalidConfig, err)
+	}
+	cfg.MetricsAllowedCIDRs = metricsCIDRs
 
-	// Parse Device HMAC KeyRing
 	deviceDefault := ""
 	if isDevOrTest {
 		deviceDefault = "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -163,7 +138,6 @@ func LoadFromEnv() (*Config, error) {
 	}
 	cfg.DeviceHMACKeyRing = deviceRing
 
-	// Parse Audit Subject HMAC KeyRing
 	auditDefault := ""
 	if isDevOrTest {
 		auditDefault = "1:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
@@ -174,16 +148,15 @@ func LoadFromEnv() (*Config, error) {
 	}
 	cfg.AuditSubjectHMACKeyRing = auditRing
 
-	// Parse JWT Ed25519 KeyRing
 	jwtRing, err := parseEd25519KeyRing(isDevOrTest)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid JWT keys: %v", ErrInvalidConfig, err)
 	}
 	cfg.JWTKeyRing = jwtRing
 
-	// Parse wireauth RSA private key
 	wireauthKeyPath := getEnv("WIREAUTH_RSA_KEY_PATH", "")
 	wireauthKeyPEM := getEnv("WIREAUTH_RSA_KEY_PEM", "")
+
 	if wireauthKeyPath != "" {
 		data, err := os.ReadFile(wireauthKeyPath)
 		if err != nil {
@@ -219,6 +192,16 @@ func LoadFromEnv() (*Config, error) {
 		}
 	}
 
+	if !isDevOrTest {
+		for _, origins := range [][]string{cfg.AllowedWSOrigins, cfg.WebAuthnRPOrigins} {
+			for _, origin := range origins {
+				if origin == "*" {
+					return nil, fmt.Errorf("%w: wildcard origins are not allowed outside development", ErrInvalidConfig)
+				}
+			}
+		}
+	}
+
 	return cfg, nil
 }
 
@@ -234,7 +217,6 @@ func parseCIDRs(raw string) ([]*net.IPNet, error) {
 			continue
 		}
 		if !strings.Contains(p, "/") {
-			// Single IP -> /32 or /128
 			ip := net.ParseIP(p)
 			if ip == nil {
 				return nil, fmt.Errorf("invalid IP: %s", p)
@@ -245,6 +227,7 @@ func parseCIDRs(raw string) ([]*net.IPNet, error) {
 				p += "/128"
 			}
 		}
+
 		_, ipNet, err := net.ParseCIDR(p)
 		if err != nil {
 			return nil, err
@@ -321,8 +304,7 @@ func parseEd25519KeyRing(isDev bool) (Ed25519KeyRing, error) {
 		if !isDev {
 			return Ed25519KeyRing{}, errors.New("missing required environment variable JWT_ED25519_KEYS")
 		}
-		// Generate deterministic default test key pair in dev/test
-		seed := []byte("01234567890123456789012345678901") // 32 bytes
+		seed := []byte("01234567890123456789012345678901")
 		priv := ed25519.NewKeyFromSeed(seed)
 		pub := priv.Public().(ed25519.PublicKey)
 		privMap["key-1"] = priv

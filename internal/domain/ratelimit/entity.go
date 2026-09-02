@@ -1,8 +1,6 @@
-// Package ratelimit defines rate limiting configuration, multi-window results, and engine interfaces.
 package ratelimit
 
 import (
-	"context"
 	"errors"
 	"time"
 )
@@ -25,10 +23,4 @@ type Result struct {
 	Remaining  int64
 	ResetAt    time.Time
 	RetryAfter time.Duration
-}
-
-// Limiter provides multi-window rate limiting evaluation and usage querying.
-type Limiter interface {
-	Allow(ctx context.Context, key string, limits []Limit) ([]Result, error)
-	Usage(ctx context.Context, key string, limits []Limit) ([]Result, error)
 }

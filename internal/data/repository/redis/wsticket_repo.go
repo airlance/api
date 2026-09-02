@@ -1,4 +1,3 @@
-// Package redis provides Redis implementations for ephemeral data structures like WebSocket tickets.
 package redis
 
 import (
@@ -13,17 +12,14 @@ import (
 	"airlance.org/api/internal/domain/wsticket"
 )
 
-// WSTicketRepository implements wsticket.Repository using Redis.
 type WSTicketRepository struct {
 	client *goredis.Client
 }
 
-// NewWSTicketRepository constructs a WSTicketRepository.
 func NewWSTicketRepository(client *goredis.Client) *WSTicketRepository {
 	return &WSTicketRepository{client: client}
 }
 
-// Create stores a short-lived single-use ticket in Redis.
 func (r *WSTicketRepository) Create(ctx context.Context, ticket *wsticket.Ticket, ttl time.Duration) error {
 	data, err := json.Marshal(ticket)
 	if err != nil {
@@ -38,11 +34,9 @@ func (r *WSTicketRepository) Create(ctx context.Context, ticket *wsticket.Ticket
 	return nil
 }
 
-// ConsumeByID atomically retrieves and deletes a ticket.
 func (r *WSTicketRepository) ConsumeByID(ctx context.Context, id string) (*wsticket.Ticket, error) {
 	key := fmt.Sprintf("ws:ticket:%s", id)
 
-	// Use GETDEL (or fallback Lua script) to guarantee single-use consumption
 	res, err := r.client.GetDel(ctx, key).Bytes()
 	if err != nil {
 		if errors.Is(err, goredis.Nil) {

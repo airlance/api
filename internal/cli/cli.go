@@ -23,7 +23,6 @@ func NewRootCmd() *cobra.Command {
 	return rootCmd
 }
 
-// Execute runs the Cobra root command.
 func Execute() {
 	if err := NewRootCmd().Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

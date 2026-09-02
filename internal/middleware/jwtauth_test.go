@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
 	"airlance.org/api/internal/config"
@@ -57,7 +58,7 @@ func TestJWTMiddleware_Validation(t *testing.T) {
 		t.Fatalf("failed to issue token: %v", err)
 	}
 
-	mw := JWTMiddleware(keyRing)
+	mw := JWTMiddleware(keyRing, "airlance-api")
 
 	var capturedCID uuid.UUID
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +77,29 @@ func TestJWTMiddleware_Validation(t *testing.T) {
 	}
 	if capturedCID != clientRepo.client.ID {
 		t.Errorf("expected client ID %v, got %v", clientRepo.client.ID, capturedCID)
+	}
+
+	wrongClaims := apiauth.APIClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "other-service",
+			Subject:   clientRepo.client.UserID.String(),
+			Audience:  jwt.ClaimStrings{"api"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
+		},
+		ClientID: clientRepo.client.ID.String(),
+	}
+	wrongIssuer := jwt.NewWithClaims(jwt.SigningMethodEdDSA, wrongClaims)
+	wrongIssuer.Header["kid"] = keyRing.CurrentKID
+	wrongToken, err := wrongIssuer.SignedString(priv)
+	if err != nil {
+		t.Fatalf("sign wrong-issuer token: %v", err)
+	}
+	wrongReq := httptest.NewRequest(http.MethodGet, "/api/v1/getMe", nil)
+	wrongReq.Header.Set("Authorization", "Bearer "+wrongToken)
+	wrongRec := httptest.NewRecorder()
+	handler.ServeHTTP(wrongRec, wrongReq)
+	if wrongRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected wrong issuer to be rejected, got %d", wrongRec.Code)
 	}
 }
 

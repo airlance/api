@@ -1,8 +1,6 @@
-// Package wsticket defines single-use tickets for establishing WebSocket connections.
 package wsticket
 
 import (
-	"context"
 	"errors"
 	"time"
 
@@ -23,10 +21,4 @@ type Ticket struct {
 	SessionID uuid.UUID
 	DeviceID  *uuid.UUID
 	ExpiresAt time.Time
-}
-
-// Repository defines atomic storage operations for WebSocket tickets.
-type Repository interface {
-	Create(ctx context.Context, ticket *Ticket, ttl time.Duration) error
-	ConsumeByID(ctx context.Context, id string) (*Ticket, error)
 }

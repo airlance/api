@@ -10,7 +10,6 @@ import (
 	"fmt"
 )
 
-// KeyRing represents versioned HMAC keys.
 type KeyRing struct {
 	CurrentKeyID uint16
 	Keys         map[uint16][]byte

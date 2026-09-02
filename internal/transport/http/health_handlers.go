@@ -12,6 +12,7 @@ import (
 
 	"airlance.org/api/internal/config"
 	"airlance.org/api/internal/infrastructure/database"
+	"airlance.org/api/internal/infrastructure/logger"
 )
 
 // HealthHandlers provides health check probes.
@@ -51,7 +52,8 @@ func (h *HealthHandlers) Readyz(w http.ResponseWriter, r *http.Request) {
 	// 1. Check Postgres
 	if h.pool != nil {
 		if err := h.pool.Ping(ctx); err != nil {
-			checks["postgres"] = "unreachable: " + err.Error()
+			logger.FromContext(r.Context()).Error(err, "Postgres readiness check failed")
+			checks["postgres"] = "unreachable"
 			isReady = false
 		} else {
 			checks["postgres"] = "ok"
@@ -63,7 +65,8 @@ func (h *HealthHandlers) Readyz(w http.ResponseWriter, r *http.Request) {
 	// 2. Check Redis
 	if h.redis != nil {
 		if err := h.redis.Ping(ctx).Err(); err != nil {
-			checks["redis"] = "unreachable: " + err.Error()
+			logger.FromContext(r.Context()).Error(err, "Redis readiness check failed")
+			checks["redis"] = "unreachable"
 			isReady = false
 		} else {
 			checks["redis"] = "ok"
@@ -77,7 +80,8 @@ func (h *HealthHandlers) Readyz(w http.ResponseWriter, r *http.Request) {
 		schemaVersion, dirty, err := database.GetCurrentSchemaVersion(h.cfg.DatabaseDSN, "migrations")
 		if err != nil {
 			if h.cfg.Env != "test" {
-				checks["schema"] = "lookup failed: " + err.Error()
+				logger.FromContext(r.Context()).Error(err, "Schema readiness check failed")
+				checks["schema"] = "lookup failed"
 				isReady = false
 			} else {
 				checks["schema"] = "ok"

@@ -14,6 +14,29 @@ import (
 	sessionUC "airlance.org/api/internal/usecase/session"
 )
 
+func TestValidateCSRF_RequiresDoubleSubmitWhenOriginIsAbsent(t *testing.T) {
+	allowedOrigins := []string{"https://app.example.com"}
+
+	missing := httptest.NewRequest(http.MethodPost, "/protected", nil)
+	if validateCSRF(missing, allowedOrigins) {
+		t.Fatal("expected a request without Origin or double-submit token to be rejected")
+	}
+
+	mismatch := httptest.NewRequest(http.MethodPost, "/protected", nil)
+	mismatch.Header.Set("X-CSRF-Token", "header-token")
+	mismatch.AddCookie(&http.Cookie{Name: "csrf_token", Value: "cookie-token"})
+	if validateCSRF(mismatch, allowedOrigins) {
+		t.Fatal("expected mismatched double-submit tokens to be rejected")
+	}
+
+	valid := httptest.NewRequest(http.MethodPost, "/protected", nil)
+	valid.Header.Set("X-CSRF-Token", "token")
+	valid.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
+	if !validateCSRF(valid, allowedOrigins) {
+		t.Fatal("expected matching double-submit tokens to be accepted")
+	}
+}
+
 type testTxManager struct{}
 
 func (m *testTxManager) WithTx(ctx context.Context, fn func(ctx context.Context) error) error {

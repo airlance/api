@@ -7,7 +7,6 @@ import (
 	"airlance.org/api/internal/transport/ws"
 )
 
-// Handlers encapsulates all HTTP and WebSocket handlers.
 type Handlers struct {
 	Health     *transportHTTP.HealthHandlers
 	Auth       *v1.AuthHandlers
@@ -20,7 +19,6 @@ type Handlers struct {
 	WSServer   *ws.Server
 }
 
-// InitHandlers constructs handlers and routers for HTTP and WebSocket.
 func InitHandlers(cfg *config.Config, infra *Infrastructures, repos *Repositories, services *Services) *Handlers {
 	health := transportHTTP.NewHealthHandlers(infra.DBPool, infra.RedisClient, cfg)
 	authHandlers := v1.NewAuthHandlers(services.Auth, services.Session, cfg)

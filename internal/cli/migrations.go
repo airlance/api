@@ -1,4 +1,3 @@
-// Package cli provides the Cobra command-line interface for the application.
 package cli
 
 import (
@@ -51,7 +50,6 @@ func getMigrateInstance(dsn string) (*migrate.Migrate, error) {
 		}
 	}
 
-	// golang-migrate pgx v5 driver expects pgx5:// or pgx:// or postgres://
 	m, err := migrate.New(fmt.Sprintf("file://%s", absDir), dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize migrate: %w", err)

@@ -20,7 +20,7 @@ type (
 )
 
 // JWTMiddleware validates external client JWTs signed with Ed25519 and extracts client rate limit claims.
-func JWTMiddleware(keyRing config.Ed25519KeyRing) func(http.Handler) http.Handler {
+func JWTMiddleware(keyRing config.Ed25519KeyRing, expectedIssuer string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -51,6 +51,10 @@ func JWTMiddleware(keyRing config.Ed25519KeyRing) func(http.Handler) http.Handle
 				writeJSONError(w, http.StatusUnauthorized, "INVALID_TOKEN", "Invalid or expired API token")
 				return
 			}
+			if claims.Issuer != expectedIssuer || !containsAudience(claims.Audience, "api") {
+				writeJSONError(w, http.StatusUnauthorized, "INVALID_TOKEN", "Invalid API token claims")
+				return
+			}
 
 			clientID, err := uuid.Parse(claims.ClientID)
 			if err != nil {
@@ -72,6 +76,15 @@ func JWTMiddleware(keyRing config.Ed25519KeyRing) func(http.Handler) http.Handle
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func containsAudience(audiences jwt.ClaimStrings, expected string) bool {
+	for _, audience := range audiences {
+		if audience == expected {
+			return true
+		}
+	}
+	return false
 }
 
 // GetAPIClientID extracts the active API client ID from context.

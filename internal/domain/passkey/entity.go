@@ -1,8 +1,6 @@
-// Package passkey defines WebAuthn credentials, challenges, and repository contracts.
 package passkey
 
 import (
-	"context"
 	"errors"
 	"time"
 
@@ -51,21 +49,11 @@ type Challenge struct {
 	ExpiresAt   time.Time
 }
 
-// CredentialRepo defines persistence operations for WebAuthn credentials.
-type CredentialRepo interface {
-	Create(ctx context.Context, cred *Credential) error
-	GetByCredentialID(ctx context.Context, credID []byte) (*Credential, error)
-	GetByID(ctx context.Context, id uuid.UUID) (*Credential, error)
-	ListByIdentityID(ctx context.Context, identityID uuid.UUID) ([]*Credential, error)
-	ListByUserID(ctx context.Context, userID uuid.UUID) ([]*Credential, error)
-	UpdateSignCount(ctx context.Context, id uuid.UUID, newCount uint32, lastUsedAt time.Time) error
-	DeleteByID(ctx context.Context, id uuid.UUID) error
-}
-
-// ChallengeRepo defines persistence operations for ephemeral WebAuthn challenges.
-type ChallengeRepo interface {
-	Create(ctx context.Context, ch *Challenge) error
-	// ConsumeByID atomically deletes and returns the challenge in a single query to prevent replay races.
-	ConsumeByID(ctx context.Context, id uuid.UUID) (*Challenge, error)
-	CleanupExpired(ctx context.Context, before time.Time) (int64, error)
+// VerifiedCredential represents the validated passkey credential resulting from registration or login verification.
+type VerifiedCredential struct {
+	CredentialID []byte
+	PublicKey    []byte
+	SignCount    uint32
+	Transports   []string
+	AAGUID       uuid.UUID
 }

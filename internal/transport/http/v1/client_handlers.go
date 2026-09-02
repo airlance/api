@@ -46,7 +46,7 @@ func (h *ClientHandlers) CreateClient(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.apiAuthUC.CreateClient(r.Context(), userID, req.Name, ip, ua, reqID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "CREATE_FAILED", err.Error())
+		writeOperationError(w, r, http.StatusBadRequest, "CREATE_FAILED", "Client creation failed", err)
 		return
 	}
 
@@ -63,7 +63,7 @@ func (h *ClientHandlers) ListClients(w http.ResponseWriter, r *http.Request) {
 
 	clients, err := h.apiAuthUC.ListClients(r.Context(), userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		writeOperationError(w, r, http.StatusInternalServerError, "INTERNAL", "Unable to list clients", err)
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *ClientHandlers) RevokeClient(w http.ResponseWriter, r *http.Request) {
 	reqID := r.Header.Get("X-Request-ID")
 
 	if err := h.apiAuthUC.RevokeClient(r.Context(), userID, clientID, ip, ua, reqID); err != nil {
-		writeError(w, http.StatusBadRequest, "REVOKE_FAILED", err.Error())
+		writeOperationError(w, r, http.StatusBadRequest, "REVOKE_FAILED", "Client revocation failed", err)
 		return
 	}
 
@@ -122,7 +122,7 @@ func (h *ClientHandlers) IssueToken(w http.ResponseWriter, r *http.Request) {
 
 	tokenStr, exp, err := h.apiAuthUC.IssueToken(r.Context(), clientID, req.Secret)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", err.Error())
+		writeOperationError(w, r, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid client credentials", err)
 		return
 	}
 

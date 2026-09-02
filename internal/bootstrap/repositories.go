@@ -13,7 +13,6 @@ import (
 	"airlance.org/api/internal/domain/wsticket"
 )
 
-// Repositories encapsulates all storage repository adapters.
 type Repositories struct {
 	User          user.Repository
 	Identity      identity.Repository
@@ -27,7 +26,6 @@ type Repositories struct {
 	WSTicket      wsticket.Repository
 }
 
-// InitRepositories constructs data repository adapters from infrastructure clients.
 func InitRepositories(infra *Infrastructures) *Repositories {
 	return &Repositories{
 		User:          postgres.NewUserRepository(infra.DBPool),

@@ -7,7 +7,6 @@ import (
 )
 
 var (
-	// Version can be overwritten at build time with -ldflags
 	Version = "v1.0.0-dev"
 )
 

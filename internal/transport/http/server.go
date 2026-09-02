@@ -127,7 +127,7 @@ func (s *Server) buildRoutes() http.Handler {
 	mux.HandleFunc("GET /readyz", s.healthHandlers.Readyz)
 
 	// 2. Metrics Probe
-	mux.Handle("GET /metrics", s.metricsRegistry.Handler())
+	mux.Handle("GET /metrics", s.metricsAccessMiddleware(s.metricsRegistry.Handler()))
 
 	// 3. WebSocket endpoint
 	if s.wsServer != nil {
@@ -136,7 +136,7 @@ func (s *Server) buildRoutes() http.Handler {
 
 	// 4. Middlewares
 	sessionAuth := middleware.SessionMiddleware(s.sessionUC, s.cfg.WebAuthnRPOrigins)
-	jwtAuth := middleware.JWTMiddleware(s.cfg.JWTKeyRing)
+	jwtAuth := middleware.JWTMiddleware(s.cfg.JWTKeyRing, s.cfg.ServiceName)
 
 	maskSecret := s.cfg.AuditSubjectHMACKeyRing.Keys[s.cfg.AuditSubjectHMACKeyRing.CurrentKeyID]
 
@@ -206,6 +206,20 @@ func (s *Server) buildRoutes() http.Handler {
 	handler = s.maxBodyBytesMiddleware(handler)
 
 	return handler
+}
+
+func (s *Server) metricsAccessMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if middleware.IsIPInCIDRs(middleware.GetClientIP(r.Context()), s.cfg.MetricsAllowedCIDRs) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		writeMetricsAccessDenied(w)
+	})
+}
+
+func writeMetricsAccessDenied(w http.ResponseWriter) {
+	http.Error(w, "metrics access denied", http.StatusForbidden)
 }
 
 func (s *Server) maxBodyBytesMiddleware(next http.Handler) http.Handler {

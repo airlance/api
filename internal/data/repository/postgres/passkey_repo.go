@@ -14,17 +14,14 @@ import (
 	"airlance.org/api/internal/infrastructure/database"
 )
 
-// PasskeyCredentialRepository implements passkey.CredentialRepo for PostgreSQL.
 type PasskeyCredentialRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewPasskeyCredentialRepository constructs a PasskeyCredentialRepository.
 func NewPasskeyCredentialRepository(pool *pgxpool.Pool) *PasskeyCredentialRepository {
 	return &PasskeyCredentialRepository{pool: pool}
 }
 
-// Create inserts a new passkey credential record.
 func (r *PasskeyCredentialRepository) Create(ctx context.Context, cred *passkey.Credential) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -38,7 +35,6 @@ func (r *PasskeyCredentialRepository) Create(ctx context.Context, cred *passkey.
 	return nil
 }
 
-// GetByCredentialID finds a credential by its raw WebAuthn credential ID.
 func (r *PasskeyCredentialRepository) GetByCredentialID(ctx context.Context, credID []byte) (*passkey.Credential, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -58,7 +54,6 @@ func (r *PasskeyCredentialRepository) GetByCredentialID(ctx context.Context, cre
 	return &c, nil
 }
 
-// GetByID finds a credential by ID.
 func (r *PasskeyCredentialRepository) GetByID(ctx context.Context, id uuid.UUID) (*passkey.Credential, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -78,7 +73,6 @@ func (r *PasskeyCredentialRepository) GetByID(ctx context.Context, id uuid.UUID)
 	return &c, nil
 }
 
-// ListByIdentityID returns all credentials belonging to a passkey identity.
 func (r *PasskeyCredentialRepository) ListByIdentityID(ctx context.Context, identityID uuid.UUID) ([]*passkey.Credential, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -104,7 +98,6 @@ func (r *PasskeyCredentialRepository) ListByIdentityID(ctx context.Context, iden
 	return res, rows.Err()
 }
 
-// ListByUserID returns all passkey credentials belonging to any identity of the user.
 func (r *PasskeyCredentialRepository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*passkey.Credential, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -131,7 +124,6 @@ func (r *PasskeyCredentialRepository) ListByUserID(ctx context.Context, userID u
 	return res, rows.Err()
 }
 
-// UpdateSignCount updates the signature counter and last used timestamp.
 func (r *PasskeyCredentialRepository) UpdateSignCount(ctx context.Context, id uuid.UUID, newCount uint32, lastUsedAt time.Time) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `UPDATE passkey_credentials SET sign_count = $1, last_used_at = $2 WHERE id = $3`
@@ -145,7 +137,6 @@ func (r *PasskeyCredentialRepository) UpdateSignCount(ctx context.Context, id uu
 	return nil
 }
 
-// DeleteByID removes a credential.
 func (r *PasskeyCredentialRepository) DeleteByID(ctx context.Context, id uuid.UUID) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `DELETE FROM passkey_credentials WHERE id = $1`
@@ -159,17 +150,14 @@ func (r *PasskeyCredentialRepository) DeleteByID(ctx context.Context, id uuid.UU
 	return nil
 }
 
-// ChallengeRepository implements passkey.ChallengeRepo for PostgreSQL.
 type ChallengeRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewChallengeRepository constructs a ChallengeRepository.
 func NewChallengeRepository(pool *pgxpool.Pool) *ChallengeRepository {
 	return &ChallengeRepository{pool: pool}
 }
 
-// Create stores a new ceremony challenge.
 func (r *ChallengeRepository) Create(ctx context.Context, ch *passkey.Challenge) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -183,7 +171,6 @@ func (r *ChallengeRepository) Create(ctx context.Context, ch *passkey.Challenge)
 	return nil
 }
 
-// ConsumeByID atomically deletes and returns the challenge in a single query to prevent replay races.
 func (r *ChallengeRepository) ConsumeByID(ctx context.Context, id uuid.UUID) (*passkey.Challenge, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -210,7 +197,6 @@ func (r *ChallengeRepository) ConsumeByID(ctx context.Context, id uuid.UUID) (*p
 	return &ch, nil
 }
 
-// CleanupExpired purges all challenges with expires_at in the past.
 func (r *ChallengeRepository) CleanupExpired(ctx context.Context, before time.Time) (int64, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `DELETE FROM challenges WHERE expires_at < $1`

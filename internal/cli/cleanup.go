@@ -40,7 +40,6 @@ func newCleanupCmd() *cobra.Command {
 
 			cutoff := time.Now().Add(-maxAge)
 
-			// Clean expired challenges
 			cleanedChallenges, err := challengeRepo.CleanupExpired(ctx, cutoff)
 			if err != nil {
 				log.Error(err, "Failed to cleanup expired passkey challenges")
@@ -48,7 +47,6 @@ func newCleanupCmd() *cobra.Command {
 				log.Info("Cleaned up expired challenges", "count", cleanedChallenges)
 			}
 
-			// Clean expired sessions
 			cleanedSessions, err := sessionRepo.CleanupExpired(ctx, cutoff)
 			if err != nil {
 				log.Error(err, "Failed to cleanup expired sessions")

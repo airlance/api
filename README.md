@@ -91,32 +91,70 @@ exclusive configurations:
 - TLS termination at a trusted ingress: `TLS_TERMINATION_INGRESS=true` and an
   explicit `TRUSTED_PROXIES` CIDR list.
 
+`/metrics` is restricted in-process to `METRICS_ALLOWED_CIDRS` (loopback by
+default). Set it to the CIDRs used by the production monitoring network.
+
 ## HTTP API
 
 All responses and errors are JSON. Errors use the following shape:
 `{"error":{"code":"…","message":"…"}}`.
 
-| Method | Route | Purpose |
-| --- | --- | --- |
-| `GET` | `/livez` | Process liveness; does not call dependencies. |
-| `GET` | `/readyz`, `/healthz` | Checks PostgreSQL, Redis, and the supported schema-version range. |
-| `GET` | `/metrics` | Prometheus metrics scrape endpoint. |
-| `POST` | `/api/v1/auth/passkey/signup/options` | Start passkey signup. |
-| `POST` | `/api/v1/auth/passkey/signup/verify?challenge_id=` | Verify signup and create a session. |
-| `POST` | `/api/v1/auth/passkey/login/options` | Start discoverable passkey login. |
-| `POST` | `/api/v1/auth/passkey/login/verify?challenge_id=` | Verify an assertion and create a session. |
-| `POST` | `/api/v1/auth/passkey/register/options` | Start adding a credential; requires a session. |
-| `POST` | `/api/v1/auth/passkey/register/verify?challenge_id=` | Verify the credential; requires a session. |
-| `DELETE` | `/api/v1/auth/passkey/{credentialID}` | Remove an owned credential; the last one cannot be removed. |
-| `POST` | `/api/v1/auth/session/revoke` | Revoke current authenticated session. |
-| `POST` | `/api/v1/auth/sessions/revoke-all` | Revoke all active sessions for current user. |
-| `GET` | `/api/v1/devices` | List registered devices for current user. |
-| `DELETE` | `/api/v1/devices/{id}` | Revoke an owned device. |
-| `POST` | `/api/v1/ws/ticket` | Issue a single-use WS ticket; requires a session. |
-| `POST`, `GET` | `/api/v1/clients` | Create or list API clients; requires a session. |
-| `DELETE` | `/api/v1/clients/{id}` | Revoke an owned API client; requires a session. |
-| `POST` | `/api/v1/auth/token` | Obtain a JWT from a `client_id` and one-time secret. |
-| `GET` | `/api/v1/getMe` | JWT-protected user/client identity and current rate-limit usage. |
+Access levels: **public** (no auth), **session** (`session_token` cookie or
+session `Authorization: Bearer`, subject to CSRF checks on cookie-mode
+mutating requests), **jwt** (external API `Authorization: Bearer`, Ed25519,
+`iss`/`aud`-checked), **internal** (gated by `METRICS_ALLOWED_CIDRS` or
+equivalent allowlist, not meant to be reachable from the public internet).
+
+| Method | Route | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/livez` | public | Process liveness; does not call dependencies. |
+| `GET` | `/readyz`, `/healthz` | public | Checks PostgreSQL, Redis, and the supported schema-version range. |
+| `GET` | `/metrics` | internal | Prometheus metrics scrape endpoint; CIDR-gated. |
+| `POST` | `/api/v1/auth/passkey/signup/options` | public | Start passkey signup. |
+| `POST` | `/api/v1/auth/passkey/signup/verify?challenge_id=` | public | Verify signup and create a session. |
+| `POST` | `/api/v1/auth/passkey/login/options` | public | Start discoverable passkey login. |
+| `POST` | `/api/v1/auth/passkey/login/verify?challenge_id=` | public | Verify an assertion and create a session. |
+| `POST` | `/api/v1/auth/passkey/register/options` | session | Start adding a credential. |
+| `POST` | `/api/v1/auth/passkey/register/verify?challenge_id=` | session | Verify the credential. |
+| `DELETE` | `/api/v1/auth/passkey/{credentialID}` | session | Remove an owned credential; the last one cannot be removed. |
+| `POST` | `/api/v1/auth/session/revoke` | session | Revoke current authenticated session. |
+| `POST` | `/api/v1/auth/sessions/revoke-all` | session | Revoke all active sessions for current user. |
+| `GET` | `/api/v1/devices` | session | List registered devices for current user. |
+| `DELETE` | `/api/v1/devices/{id}` | session | Revoke an owned device. |
+| `POST` | `/api/v1/ws/ticket` | session | Issue a single-use WS ticket. |
+| `POST`, `GET` | `/api/v1/clients` | session | Create or list API clients. |
+| `DELETE` | `/api/v1/clients/{id}` | session | Revoke an owned API client. |
+| `POST` | `/api/v1/auth/token` | public | Obtain a JWT from a `client_id` and one-time secret (IP rate-limited). |
+| `GET` | `/api/v1/getMe` | jwt | User/client identity and current rate-limit usage. |
+
+## Security
+
+This section documents trust boundaries so changes don't silently weaken
+them. See `AGENTS.md` for the enforceable rules and PR checklist.
+
+- **Trusted proxies.** `X-Forwarded-For` and `X-Forwarded-Proto` are only
+  honored when the immediate peer address is in `TRUSTED_PROXIES`; otherwise
+  the socket's remote address is used as-is. Misconfiguring
+  `TRUSTED_PROXIES` (too broad) lets clients spoof their own IP and defeats
+  IP-keyed rate limiting; misconfiguring it (too narrow, e.g. missing the
+  real ingress) breaks IP-based rate limiting and TLS-termination detection.
+- **CSRF.** Cookie-authenticated, state-mutating requests are checked via
+  `Sec-Fetch-Site`, then `Origin` against `WEBAUTHN_RP_ORIGINS`, then a
+  double-submit `X-CSRF-Token`/`csrf_token` cookie pair. All three paths deny
+  by default; a request with no usable signal is rejected, not allowed. This
+  check does not run for `Authorization: Bearer` session auth, since that
+  mode isn't cookie-driven and browsers can't attach it cross-site.
+- **`/metrics` and other internal routes.** Gated by `METRICS_ALLOWED_CIDRS`
+  (default: loopback only). Treat this as defense in depth, not a
+  replacement for keeping such routes off the public listener/ingress.
+- **JWT (external API).** Ed25519, `kid`-selected from `JWT_ED25519_KEYS`,
+  and validated for `iss` (`ServiceName`) and `aud` (`"api"`) in addition to
+  signature and expiry. A token that only satisfies the signature check is
+  rejected.
+- **Origins.** `WEBAUTHN_RP_ORIGINS` and `ALLOWED_WS_ORIGINS` reject the
+  wildcard `*` outside `development`/`test` at config-load time.
+- **Vulnerability reports.** If you find a security issue in this codebase,
+  do not open a public issue; contact the maintainers directly first.
 
 ## Verification
 

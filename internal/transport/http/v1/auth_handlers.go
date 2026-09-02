@@ -40,7 +40,7 @@ func (h *AuthHandlers) PasskeySignupOptions(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		writeOperationError(w, r, http.StatusInternalServerError, "INTERNAL", "Unable to start signup", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, opts)
@@ -80,7 +80,7 @@ func (h *AuthHandlers) PasskeySignupVerify(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
-		writeError(w, http.StatusUnauthorized, "AUTH_FAILED", err.Error())
+		writeOperationError(w, r, http.StatusUnauthorized, "AUTH_FAILED", "Signup verification failed", err)
 		return
 	}
 
@@ -98,7 +98,7 @@ func (h *AuthHandlers) PasskeyLoginOptions(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		writeOperationError(w, r, http.StatusInternalServerError, "INTERNAL", "Unable to start login", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, opts)
@@ -138,7 +138,7 @@ func (h *AuthHandlers) PasskeyLoginVerify(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
-		writeError(w, http.StatusUnauthorized, "AUTH_FAILED", err.Error())
+		writeOperationError(w, r, http.StatusUnauthorized, "AUTH_FAILED", "Login verification failed", err)
 		return
 	}
 
@@ -161,7 +161,7 @@ func (h *AuthHandlers) PasskeyRegisterOptions(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		writeOperationError(w, r, http.StatusInternalServerError, "INTERNAL", "Unable to start credential registration", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, opts)
@@ -201,7 +201,7 @@ func (h *AuthHandlers) PasskeyRegisterVerify(w http.ResponseWriter, r *http.Requ
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
-		writeError(w, http.StatusBadRequest, "REGISTRATION_FAILED", err.Error())
+		writeOperationError(w, r, http.StatusBadRequest, "REGISTRATION_FAILED", "Credential registration failed", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, cred)
@@ -236,7 +236,7 @@ func (h *AuthHandlers) DeletePasskeyCredential(w http.ResponseWriter, r *http.Re
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
-		writeError(w, http.StatusBadRequest, "DELETE_FAILED", err.Error())
+		writeOperationError(w, r, http.StatusBadRequest, "DELETE_FAILED", "Credential deletion failed", err)
 		return
 	}
 
@@ -266,7 +266,7 @@ func (h *AuthHandlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 	reqID := r.Header.Get("X-Request-ID")
 
 	if err := h.sessionUC.Revoke(r.Context(), token, ip, ua, reqID); err != nil {
-		writeError(w, http.StatusInternalServerError, "REVOKE_FAILED", err.Error())
+		writeOperationError(w, r, http.StatusInternalServerError, "REVOKE_FAILED", "Session revocation failed", err)
 		return
 	}
 
@@ -295,7 +295,7 @@ func (h *AuthHandlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request)
 	reqID := r.Header.Get("X-Request-ID")
 
 	if err := h.sessionUC.RevokeAllForUser(r.Context(), userID, ip, ua, reqID); err != nil {
-		writeError(w, http.StatusInternalServerError, "REVOKE_ALL_FAILED", err.Error())
+		writeOperationError(w, r, http.StatusInternalServerError, "REVOKE_ALL_FAILED", "Session revocation failed", err)
 		return
 	}
 

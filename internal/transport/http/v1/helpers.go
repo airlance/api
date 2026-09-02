@@ -3,10 +3,17 @@ package v1
 import (
 	"encoding/json"
 	"net/http"
+
+	"airlance.org/api/internal/infrastructure/logger"
 )
 
 type errorResponse struct {
 	Error errorDetail `json:"error"`
+}
+
+func writeOperationError(w http.ResponseWriter, r *http.Request, status int, code, message string, err error) {
+	logger.FromContext(r.Context()).Error(err, "HTTP operation failed", "error_code", code)
+	writeError(w, status, code, message)
 }
 
 type errorDetail struct {

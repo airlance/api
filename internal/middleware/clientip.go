@@ -47,6 +47,12 @@ func IsTrustedProxy(remoteAddr string, trustedProxies []*net.IPNet) bool {
 	return isIPTrusted(remoteIP, trustedProxies)
 }
 
+// IsIPInCIDRs reports whether ip belongs to one of the configured CIDRs.
+func IsIPInCIDRs(ip string, cidrs []*net.IPNet) bool {
+	parsed := net.ParseIP(ip)
+	return parsed != nil && isIPTrusted(parsed, cidrs)
+}
+
 func resolveClientIP(r *http.Request, trustedProxies []*net.IPNet) string {
 	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

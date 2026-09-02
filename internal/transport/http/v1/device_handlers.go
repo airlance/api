@@ -30,7 +30,7 @@ func (h *DeviceHandlers) ListDevices(w http.ResponseWriter, r *http.Request) {
 
 	devices, err := h.authUC.ListDevices(r.Context(), userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		writeOperationError(w, r, http.StatusInternalServerError, "INTERNAL", "Unable to list devices", err)
 		return
 	}
 
@@ -62,7 +62,7 @@ func (h *DeviceHandlers) RevokeDevice(w http.ResponseWriter, r *http.Request) {
 	reqID := r.Header.Get("X-Request-ID")
 
 	if err := h.authUC.RevokeDevice(r.Context(), userID, deviceID, ip, ua, reqID); err != nil {
-		writeError(w, http.StatusBadRequest, "REVOCATION_FAILED", err.Error())
+		writeOperationError(w, r, http.StatusBadRequest, "REVOCATION_FAILED", "Device revocation failed", err)
 		return
 	}
 

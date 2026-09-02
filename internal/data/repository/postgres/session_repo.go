@@ -14,17 +14,14 @@ import (
 	"airlance.org/api/internal/infrastructure/database"
 )
 
-// SessionRepository implements session.Repository for PostgreSQL.
 type SessionRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewSessionRepository constructs a SessionRepository.
 func NewSessionRepository(pool *pgxpool.Pool) *SessionRepository {
 	return &SessionRepository{pool: pool}
 }
 
-// Create inserts a new session record.
 func (r *SessionRepository) Create(ctx context.Context, s *session.Session) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -38,7 +35,6 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 	return nil
 }
 
-// GetValid looks up an unrevoked, unexpired session by its token hash.
 func (r *SessionRepository) GetValid(ctx context.Context, tokenHash []byte) (*session.Session, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -66,7 +62,6 @@ func (r *SessionRepository) GetValid(ctx context.Context, tokenHash []byte) (*se
 	return &s, nil
 }
 
-// GetByID looks up a session by ID.
 func (r *SessionRepository) GetByID(ctx context.Context, id uuid.UUID) (*session.Session, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -86,7 +81,6 @@ func (r *SessionRepository) GetByID(ctx context.Context, id uuid.UUID) (*session
 	return &s, nil
 }
 
-// Revoke marks a session revoked by its token hash.
 func (r *SessionRepository) Revoke(ctx context.Context, tokenHash []byte) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `UPDATE sessions SET revoked_at = NOW() WHERE token_hash = $1 AND revoked_at IS NULL`
@@ -100,7 +94,6 @@ func (r *SessionRepository) Revoke(ctx context.Context, tokenHash []byte) error 
 	return nil
 }
 
-// RevokeByID marks a session revoked by ID.
 func (r *SessionRepository) RevokeByID(ctx context.Context, id uuid.UUID) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `UPDATE sessions SET revoked_at = NOW() WHERE id = $1 AND revoked_at IS NULL`
@@ -114,7 +107,6 @@ func (r *SessionRepository) RevokeByID(ctx context.Context, id uuid.UUID) error 
 	return nil
 }
 
-// RevokeAllForUser revokes all active sessions for a user.
 func (r *SessionRepository) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`
@@ -125,7 +117,6 @@ func (r *SessionRepository) RevokeAllForUser(ctx context.Context, userID uuid.UU
 	return nil
 }
 
-// RevokeAllForDevice revokes all active sessions for a device.
 func (r *SessionRepository) RevokeAllForDevice(ctx context.Context, deviceID uuid.UUID) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `UPDATE sessions SET revoked_at = NOW() WHERE device_id = $1 AND revoked_at IS NULL`
@@ -136,7 +127,6 @@ func (r *SessionRepository) RevokeAllForDevice(ctx context.Context, deviceID uui
 	return nil
 }
 
-// CleanupExpired deletes expired sessions older than the given timestamp.
 func (r *SessionRepository) CleanupExpired(ctx context.Context, before time.Time) (int64, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `DELETE FROM sessions WHERE expires_at < $1`

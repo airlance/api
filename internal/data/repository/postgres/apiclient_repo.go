@@ -14,17 +14,14 @@ import (
 	"airlance.org/api/internal/infrastructure/database"
 )
 
-// APIClientRepository implements apiclient.Repository for PostgreSQL.
 type APIClientRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewAPIClientRepository constructs an APIClientRepository.
 func NewAPIClientRepository(pool *pgxpool.Pool) *APIClientRepository {
 	return &APIClientRepository{pool: pool}
 }
 
-// Create registers a new API client.
 func (r *APIClientRepository) Create(ctx context.Context, client *apiclient.APIClient) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -33,8 +30,7 @@ func (r *APIClientRepository) Create(ctx context.Context, client *apiclient.APIC
 	`
 	_, err := exec.Exec(ctx, query, client.ID, client.UserID, client.TierID, client.Name, client.SecretHash, client.CreatedAt, client.RevokedAt)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return apiclient.ErrDuplicateName
 		}
 		return fmt.Errorf("apiclient_repo: create failed: %w", err)
@@ -42,7 +38,6 @@ func (r *APIClientRepository) Create(ctx context.Context, client *apiclient.APIC
 	return nil
 }
 
-// GetByID finds an API client by ID.
 func (r *APIClientRepository) GetByID(ctx context.Context, id uuid.UUID) (*apiclient.APIClient, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -62,7 +57,6 @@ func (r *APIClientRepository) GetByID(ctx context.Context, id uuid.UUID) (*apicl
 	return &c, nil
 }
 
-// ListByUserID returns all API clients created by a user.
 func (r *APIClientRepository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*apiclient.APIClient, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -88,7 +82,6 @@ func (r *APIClientRepository) ListByUserID(ctx context.Context, userID uuid.UUID
 	return res, rows.Err()
 }
 
-// Revoke marks an API client as revoked.
 func (r *APIClientRepository) Revoke(ctx context.Context, id uuid.UUID) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `UPDATE api_clients SET revoked_at = NOW() WHERE id = $1 AND revoked_at IS NULL`
@@ -102,17 +95,14 @@ func (r *APIClientRepository) Revoke(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// RateLimitTierRepository implements apiclient.TierRepository for PostgreSQL.
 type RateLimitTierRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewRateLimitTierRepository constructs a RateLimitTierRepository.
 func NewRateLimitTierRepository(pool *pgxpool.Pool) *RateLimitTierRepository {
 	return &RateLimitTierRepository{pool: pool}
 }
 
-// GetByID finds a tier by ID.
 func (r *RateLimitTierRepository) GetByID(ctx context.Context, id uuid.UUID) (*apiclient.RateLimitTier, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -132,7 +122,6 @@ func (r *RateLimitTierRepository) GetByID(ctx context.Context, id uuid.UUID) (*a
 	return &t, nil
 }
 
-// GetByName finds a tier by name.
 func (r *RateLimitTierRepository) GetByName(ctx context.Context, name string) (*apiclient.RateLimitTier, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `

@@ -14,17 +14,14 @@ import (
 	"airlance.org/api/internal/infrastructure/database"
 )
 
-// IdentityRepository implements identity.Repository for PostgreSQL.
 type IdentityRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewIdentityRepository constructs an IdentityRepository.
 func NewIdentityRepository(pool *pgxpool.Pool) *IdentityRepository {
 	return &IdentityRepository{pool: pool}
 }
 
-// Create inserts a new identity.
 func (r *IdentityRepository) Create(ctx context.Context, ident *identity.Identity) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -33,8 +30,7 @@ func (r *IdentityRepository) Create(ctx context.Context, ident *identity.Identit
 	`
 	_, err := exec.Exec(ctx, query, ident.ID, ident.UserID, string(ident.Kind), ident.Identifier, ident.Verified, ident.CreatedAt)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return identity.ErrAlreadyExists
 		}
 		return fmt.Errorf("identity_repo: create failed: %w", err)
@@ -42,7 +38,6 @@ func (r *IdentityRepository) Create(ctx context.Context, ident *identity.Identit
 	return nil
 }
 
-// GetByID finds an identity by ID.
 func (r *IdentityRepository) GetByID(ctx context.Context, id uuid.UUID) (*identity.Identity, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `SELECT id, user_id, kind, identifier, verified, created_at FROM identities WHERE id = $1`
@@ -60,7 +55,6 @@ func (r *IdentityRepository) GetByID(ctx context.Context, id uuid.UUID) (*identi
 	return &ident, nil
 }
 
-// GetByKindAndIdentifier finds an identity by kind and identifier.
 func (r *IdentityRepository) GetByKindAndIdentifier(ctx context.Context, kind identity.Kind, identifier string) (*identity.Identity, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `SELECT id, user_id, kind, identifier, verified, created_at FROM identities WHERE kind = $1 AND identifier = $2`
@@ -78,7 +72,6 @@ func (r *IdentityRepository) GetByKindAndIdentifier(ctx context.Context, kind id
 	return &ident, nil
 }
 
-// ListByUserID returns all identities belonging to a user.
 func (r *IdentityRepository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*identity.Identity, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `SELECT id, user_id, kind, identifier, verified, created_at FROM identities WHERE user_id = $1 ORDER BY created_at ASC`
@@ -101,7 +94,6 @@ func (r *IdentityRepository) ListByUserID(ctx context.Context, userID uuid.UUID)
 	return res, rows.Err()
 }
 
-// MarkVerified sets verified to true for an identity.
 func (r *IdentityRepository) MarkVerified(ctx context.Context, id uuid.UUID) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `UPDATE identities SET verified = TRUE WHERE id = $1`

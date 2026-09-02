@@ -7,14 +7,12 @@ import (
 	sessionUC "airlance.org/api/internal/usecase/session"
 )
 
-// Services encapsulates the application use case domain services.
 type Services struct {
 	Session *sessionUC.Usecase
 	Auth    *auth.Usecase
 	APIAuth *apiauth.Usecase
 }
 
-// InitServices constructs use case services.
 func InitServices(cfg *config.Config, infra *Infrastructures, repos *Repositories) *Services {
 	sessionService := sessionUC.NewUsecase(
 		repos.Session,

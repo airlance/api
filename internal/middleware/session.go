@@ -126,7 +126,7 @@ func validateCSRF(r *http.Request, allowedOrigins []string) bool {
 		return true
 	}
 
-	return true // If Origin not set (e.g. native or same-origin direct), allow
+	return false
 }
 
 func writeJSONError(w http.ResponseWriter, status int, code, message string) {

@@ -1,8 +1,6 @@
-// Package user defines the User core domain entity and repository interface.
 package user
 
 import (
-	"context"
 	"errors"
 	"time"
 
@@ -20,10 +18,4 @@ var (
 type User struct {
 	ID        uuid.UUID
 	CreatedAt time.Time
-}
-
-// Repository defines storage operations for users.
-type Repository interface {
-	Create(ctx context.Context, u *User) error
-	GetByID(ctx context.Context, id uuid.UUID) (*User, error)
 }

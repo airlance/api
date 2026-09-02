@@ -1,14 +1,11 @@
-// Package audit defines append-only security audit log entities and repository interfaces.
 package audit
 
 import (
-	"context"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// Standard audit event types.
 const (
 	EventAuthSignupSuccess = "auth.signup.success"
 	EventAuthSignupFailed  = "auth.signup.failed"
@@ -22,7 +19,6 @@ const (
 	EventClientRevoked     = "apiclient.revoked"
 )
 
-// Event represents an immutable audit log record for security-relevant operations.
 type Event struct {
 	ID               uuid.UUID
 	OccurredAt       time.Time
@@ -38,9 +34,4 @@ type Event struct {
 	RequestID        string
 	Metadata         map[string]any
 	CreatedAt        time.Time
-}
-
-// Repository defines storage operations for audit logging (append-only).
-type Repository interface {
-	Record(ctx context.Context, e *Event) error
 }

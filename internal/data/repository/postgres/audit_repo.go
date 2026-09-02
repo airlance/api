@@ -11,17 +11,14 @@ import (
 	"airlance.org/api/internal/infrastructure/database"
 )
 
-// AuditRepository implements audit.Repository for PostgreSQL.
 type AuditRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewAuditRepository constructs an AuditRepository.
 func NewAuditRepository(pool *pgxpool.Pool) *AuditRepository {
 	return &AuditRepository{pool: pool}
 }
 
-// Record inserts an immutable audit log record.
 func (r *AuditRepository) Record(ctx context.Context, e *audit.Event) error {
 	exec := database.GetExecutor(ctx, r.pool)
 

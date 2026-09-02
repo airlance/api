@@ -117,13 +117,11 @@ func TestLoadFromEnv_Production_RequireTLS_ExplicitIngress(t *testing.T) {
 		os.Unsetenv("TLS_TERMINATION_INGRESS")
 	}()
 
-	// 1. Without TLS certs and without explicit TLS_TERMINATION_INGRESS -> Fails
 	_, err := LoadFromEnv()
 	if err == nil {
 		t.Errorf("expected error in production when REQUIRE_TLS=true without explicit ingress mode")
 	}
 
-	// 2. With explicit TLS_TERMINATION_INGRESS=true -> Succeeds
 	os.Setenv("TLS_TERMINATION_INGRESS", "true")
 	cfg, err := LoadFromEnv()
 	if err != nil {

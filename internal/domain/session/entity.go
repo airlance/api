@@ -1,8 +1,6 @@
-// Package session defines user session entities, validation status, and repository interfaces.
 package session
 
 import (
-	"context"
 	"errors"
 	"time"
 
@@ -38,16 +36,4 @@ func (s *Session) IsValid() bool {
 		return false
 	}
 	return time.Now().Before(s.ExpiresAt)
-}
-
-// Repository defines storage operations for sessions.
-type Repository interface {
-	Create(ctx context.Context, s *Session) error
-	GetValid(ctx context.Context, tokenHash []byte) (*Session, error)
-	GetByID(ctx context.Context, id uuid.UUID) (*Session, error)
-	Revoke(ctx context.Context, tokenHash []byte) error
-	RevokeByID(ctx context.Context, id uuid.UUID) error
-	RevokeAllForUser(ctx context.Context, userID uuid.UUID) error
-	RevokeAllForDevice(ctx context.Context, deviceID uuid.UUID) error
-	CleanupExpired(ctx context.Context, before time.Time) (int64, error)
 }

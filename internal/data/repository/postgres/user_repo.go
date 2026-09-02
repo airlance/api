@@ -1,4 +1,3 @@
-// Package postgres provides PostgreSQL implementations of domain repositories using pgx.
 package postgres
 
 import (
@@ -15,24 +14,20 @@ import (
 	"airlance.org/api/internal/infrastructure/database"
 )
 
-// UserRepository implements user.Repository for PostgreSQL.
 type UserRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewUserRepository constructs a UserRepository.
 func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 	return &UserRepository{pool: pool}
 }
 
-// Create inserts a new user record.
 func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `INSERT INTO users (id, created_at) VALUES ($1, $2)`
 	_, err := exec.Exec(ctx, query, u.ID, u.CreatedAt)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return user.ErrAlreadyExists
 		}
 		return fmt.Errorf("user_repo: create failed: %w", err)
@@ -40,7 +35,6 @@ func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
 	return nil
 }
 
-// GetByID retrieves a user by ID.
 func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*user.User, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `SELECT id, created_at FROM users WHERE id = $1`

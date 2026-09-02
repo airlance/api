@@ -14,17 +14,14 @@ import (
 	"airlance.org/api/internal/infrastructure/database"
 )
 
-// DeviceRepository implements device.Repository for PostgreSQL.
 type DeviceRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewDeviceRepository constructs a DeviceRepository.
 func NewDeviceRepository(pool *pgxpool.Pool) *DeviceRepository {
 	return &DeviceRepository{pool: pool}
 }
 
-// Create registers a new client device.
 func (r *DeviceRepository) Create(ctx context.Context, d *device.Device) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -38,7 +35,6 @@ func (r *DeviceRepository) Create(ctx context.Context, d *device.Device) error {
 	return nil
 }
 
-// GetByID retrieves a device by ID.
 func (r *DeviceRepository) GetByID(ctx context.Context, id uuid.UUID) (*device.Device, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -58,7 +54,6 @@ func (r *DeviceRepository) GetByID(ctx context.Context, id uuid.UUID) (*device.D
 	return &d, nil
 }
 
-// GetByHash retrieves a device by its identifier HMAC hash.
 func (r *DeviceRepository) GetByHash(ctx context.Context, hash []byte) (*device.Device, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -78,7 +73,6 @@ func (r *DeviceRepository) GetByHash(ctx context.Context, hash []byte) (*device.
 	return &d, nil
 }
 
-// Touch updates a device's last seen time and optional app version.
 func (r *DeviceRepository) Touch(ctx context.Context, id uuid.UUID, appVersion *string, lastSeen time.Time) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `
@@ -96,7 +90,6 @@ func (r *DeviceRepository) Touch(ctx context.Context, id uuid.UUID, appVersion *
 	return nil
 }
 
-// UpdateHash updates the device identifier hash during key ring migration.
 func (r *DeviceRepository) UpdateHash(ctx context.Context, id uuid.UUID, newHash []byte) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `UPDATE devices SET device_identifier_hash = $1 WHERE id = $2`
@@ -110,7 +103,6 @@ func (r *DeviceRepository) UpdateHash(ctx context.Context, id uuid.UUID, newHash
 	return nil
 }
 
-// Revoke marks a device as revoked.
 func (r *DeviceRepository) Revoke(ctx context.Context, id uuid.UUID) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `UPDATE devices SET revoked_at = NOW() WHERE id = $1 AND revoked_at IS NULL`
@@ -124,7 +116,6 @@ func (r *DeviceRepository) Revoke(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// ListByUserID returns all devices registered to a user.
 func (r *DeviceRepository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*device.Device, error) {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `

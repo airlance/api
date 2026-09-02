@@ -1,4 +1,3 @@
-// Package bootstrap manages staged dependency wiring, service bootstrap, and graceful shutdown.
 package bootstrap
 
 import (
@@ -24,7 +23,6 @@ import (
 	"airlance.org/api/internal/infrastructure/webauthn"
 )
 
-// Infrastructures holds initialized infrastructure clients and engines.
 type Infrastructures struct {
 	DBPool         *pgxpool.Pool
 	RedisClient    *goredis.Client
@@ -37,17 +35,14 @@ type Infrastructures struct {
 	Metrics        *metrics.Registry
 }
 
-// InitInfrastructures connects to Postgres, Redis, and initializes crypto and event bus.
 func InitInfrastructures(ctx context.Context, cfg *config.Config) (*Infrastructures, error) {
 	log := logger.New(cfg.LogLevel, cfg.LogFormat)
 
-	// 1. Connect Postgres
 	dbPool, err := database.ConnectPostgres(ctx, cfg.DatabaseDSN)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap: postgres connection failed: %w", err)
 	}
 
-	// 2. Connect Redis
 	redisOpts, err := goredis.ParseURL(cfg.RedisURL)
 	if err != nil {
 		dbPool.Close()
@@ -63,7 +58,6 @@ func InitInfrastructures(ctx context.Context, cfg *config.Config) (*Infrastructu
 		return nil, fmt.Errorf("bootstrap: redis ping failed: %w", err)
 	}
 
-	// 3. WebAuthn Engine
 	wauEngine, err := webauthn.NewEngine(cfg)
 	if err != nil {
 		dbPool.Close()
@@ -71,7 +65,6 @@ func InitInfrastructures(ctx context.Context, cfg *config.Config) (*Infrastructu
 		return nil, fmt.Errorf("bootstrap: webauthn engine init failed: %w", err)
 	}
 
-	// 4. Wireauth RSA Server (Generate ephemeral RSA key in dev/test if none provided)
 	wireauthKey := cfg.WireauthPrivateKey
 	if wireauthKey == nil {
 		log.Warn("No Wireauth RSA private key configured; generating ephemeral 2048-bit RSA key")
@@ -108,7 +101,6 @@ func InitInfrastructures(ctx context.Context, cfg *config.Config) (*Infrastructu
 	}, nil
 }
 
-// Close gracefully releases infrastructure resources.
 func (i *Infrastructures) Close() {
 	if i.DBPool != nil {
 		i.DBPool.Close()

@@ -93,6 +93,12 @@ go run ./cmd/main migrate down --steps 1
 go run ./cmd/main cleanup --max-age 24h
 ```
 
+For an AI agent or CI job, use `make agent-check` (or
+`./scripts/agent-check.sh`). It runs formatting verification, vet, lint, and
+tests without rewriting source files and uses the project-local `.gocache` by
+default. `make fmt` remains the explicit formatting target that rewrites Go
+files.
+
 ### Generating secrets
 
 `.env.example` ships with the same fixed dev-only key material that

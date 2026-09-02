@@ -4,7 +4,6 @@ BINARY       := airlance-api
 CMD          := ./cmd/main
 VERSION      := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS      := -X 'airlance.org/api/internal/cli.Version=$(VERSION)'
-GOCACHE_DIR  ?= $(CURDIR)/.gocache
 
 .PHONY: help
 help: ## Show this help
@@ -75,19 +74,23 @@ fmt: ## gofmt every tracked Go file
 
 .PHONY: vet
 vet: ## go vet ./...
-	GOCACHE=$(GOCACHE_DIR) go vet ./...
+	go vet ./...
 
 .PHONY: test
 test: ## go test ./...
-	GOCACHE=$(GOCACHE_DIR) go test ./...
+	go test ./...
 
 .PHONY: lint
 lint: ## golangci-lint run (requires golangci-lint on PATH)
-	GOCACHE=$(GOCACHE_DIR) golangci-lint run ./...
+	golangci-lint run ./...
 
 .PHONY: check
 check: fmt vet lint test ## Run the full local check suite before handoff
 
+.PHONY: agent-check
+agent-check: ## Run read-only checks with an agent-safe writable Go cache
+	./scripts/agent-check.sh
+
 .PHONY: clean
 clean: ## Remove build/test artifacts
-	rm -rf dist coverage.out coverage.html $(GOCACHE_DIR)
+	rm -rf dist coverage.out coverage.html .gocache

@@ -135,6 +135,9 @@
   GOCACHE=/private/tmp/airlance-go-build-cache go test ./...
   GOCACHE=/private/tmp/airlance-go-build-cache go vet ./...
   ```
+- For a single read-only agent/CI quality gate, run `./scripts/agent-check.sh`
+  or `make agent-check`; it verifies formatting, vet, lint, and tests using a
+  writable project-local cache and never rewrites source files.
 - If an e2e test using `httptest` is then blocked from opening a local
   loopback listener, rerun the same command with the narrowly scoped
   escalation required for local test networking. Do not mistake either

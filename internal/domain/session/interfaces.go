@@ -4,17 +4,17 @@ import (
 	"context"
 	"time"
 
-	"github.com/airlance/api/internal/domain/account"
-	"github.com/airlance/api/internal/domain/device"
+	"github.com/google/uuid"
 )
 
 type Repository interface {
-	CreateSession(ctx context.Context, deviceID device.DeviceID, accountID account.AccountID) (Session, error)
-	FindSession(ctx context.Context, id SessionID) (Session, error)
-	DeleteSession(ctx context.Context, id SessionID) error
-	TouchLastActive(ctx context.Context, id SessionID) error
-	ListActiveByAccount(ctx context.Context, accountID account.AccountID) ([]Session, error)
-	Revoke(ctx context.Context, id SessionID) error
-	RevokeAllByAccount(ctx context.Context, accountID account.AccountID, exceptSessionID *SessionID) error
-	RevokeInactiveOlderThan(ctx context.Context, cutoff time.Time) (int, error)
+	Create(ctx context.Context, s *Session) error
+	GetValid(ctx context.Context, tokenHash []byte) (*Session, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*Session, error)
+	ListByUserID(ctx context.Context, userID uuid.UUID) ([]*Session, error)
+	Revoke(ctx context.Context, tokenHash []byte) error
+	RevokeByID(ctx context.Context, id uuid.UUID) error
+	RevokeAllForUser(ctx context.Context, userID uuid.UUID) error
+	RevokeAllForDevice(ctx context.Context, deviceID uuid.UUID) error
+	CleanupExpired(ctx context.Context, before time.Time) (int64, error)
 }

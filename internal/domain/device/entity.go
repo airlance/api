@@ -4,28 +4,24 @@ import (
 	"errors"
 	"time"
 
-	"github.com/airlance/api/internal/domain/account"
+	"github.com/google/uuid"
 )
 
-var ErrDeviceNotFound = errors.New("device not found")
-
-type DeviceID uint64
+var (
+	ErrNotFound = errors.New("device: not found")
+)
 
 type Device struct {
-	ID          DeviceID
-	AccountID   account.AccountID
-	PublicKey   []byte
-	Fingerprint string
-	DeviceName  string
-	Platform    string
-	OSVersion   string
-	AppVersion  string
-	PushToken   string
-	FirstSeenAt time.Time
-	LastSeenAt  time.Time
-	RevokedAt   *time.Time
+	ID                   uuid.UUID
+	UserID               uuid.UUID
+	DeviceIdentifierHash []byte
+	Platform             string
+	CreatedAt            time.Time
+	LastSeenAt           time.Time
+	LastAppVersion       *string
+	RevokedAt            *time.Time
 }
 
-func (d Device) IsRevoked() bool {
-	return d.RevokedAt != nil
+func (d *Device) IsValid() bool {
+	return d.RevokedAt == nil
 }

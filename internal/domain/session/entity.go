@@ -4,24 +4,31 @@ import (
 	"errors"
 	"time"
 
-	"github.com/airlance/api/internal/domain/account"
-	"github.com/airlance/api/internal/domain/device"
+	"github.com/google/uuid"
 )
 
-var ErrSessionNotFound = errors.New("session not found")
-
-type SessionID string
+var (
+	ErrNotFound     = errors.New("session: not found")
+	ErrExpired      = errors.New("session: expired")
+	ErrRevoked      = errors.New("session: revoked")
+	ErrInvalidToken = errors.New("session: invalid token")
+)
 
 type Session struct {
-	ID           SessionID
-	DeviceID     device.DeviceID
-	AccountID    account.AccountID
-	ConnectionID string
-	CreatedAt    time.Time
-	LastActiveAt time.Time
-	RevokedAt    *time.Time
+	ID         uuid.UUID
+	TokenHash  []byte
+	UserID     uuid.UUID
+	IdentityID uuid.UUID
+	DeviceID   *uuid.UUID
+	Platform   string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	RevokedAt  *time.Time
 }
 
-func (s Session) IsActive() bool {
-	return s.RevokedAt == nil
+func (s *Session) IsValid() bool {
+	if s.RevokedAt != nil {
+		return false
+	}
+	return time.Now().Before(s.ExpiresAt)
 }

@@ -2,30 +2,44 @@
 package v1
 
 import (
-	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
 
+	"airlance.org/api/internal/config"
 	"airlance.org/api/internal/middleware"
 	"airlance.org/api/internal/usecase/auth"
+	sessionUC "airlance.org/api/internal/usecase/session"
 )
 
-// AuthHandlers provides passkey authentication HTTP endpoints.
+// AuthHandlers provides passkey authentication and session management HTTP endpoints.
 type AuthHandlers struct {
-	authUC *auth.Usecase
+	authUC    *auth.Usecase
+	sessionUC *sessionUC.Usecase
+	cfg       *config.Config
 }
 
 // NewAuthHandlers constructs AuthHandlers.
-func NewAuthHandlers(authUC *auth.Usecase) *AuthHandlers {
-	return &AuthHandlers{authUC: authUC}
+func NewAuthHandlers(authUC *auth.Usecase, sessionUC *sessionUC.Usecase, cfg *config.Config) *AuthHandlers {
+	return &AuthHandlers{
+		authUC:    authUC,
+		sessionUC: sessionUC,
+		cfg:       cfg,
+	}
 }
 
 // PasskeySignupOptions handles POST /api/v1/auth/passkey/signup/options.
 func (h *AuthHandlers) PasskeySignupOptions(w http.ResponseWriter, r *http.Request) {
-	opts, err := h.authUC.BeginSignup(r.Context())
+	ip := middleware.GetClientIP(r.Context())
+	opts, err := h.authUC.BeginSignup(r.Context(), ip)
 	if err != nil {
+		if errors.Is(err, auth.ErrRateLimitExceeded) {
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}
@@ -44,6 +58,12 @@ func (h *AuthHandlers) PasskeySignupVerify(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to read request body")
+		return
+	}
+
 	ip := middleware.GetClientIP(r.Context())
 	ua := r.UserAgent()
 	reqID := r.Header.Get("X-Request-ID")
@@ -54,21 +74,30 @@ func (h *AuthHandlers) PasskeySignupVerify(w http.ResponseWriter, r *http.Reques
 		appVer = &v
 	}
 
-	res, err := h.authUC.FinishSignup(r.Context(), challengeID, r, rawDeviceID, platform, appVer, ip, ua, reqID)
+	res, err := h.authUC.FinishSignup(r.Context(), challengeID, payload, rawDeviceID, platform, appVer, ip, ua, reqID)
 	if err != nil {
+		if errors.Is(err, auth.ErrRateLimitExceeded) {
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
+			return
+		}
 		writeError(w, http.StatusUnauthorized, "AUTH_FAILED", err.Error())
 		return
 	}
 
 	// Set cookie if requested or from browser
-	applySessionCookie(w, r, res.Token)
+	h.applySessionCookie(w, r, res.Token)
 	writeJSON(w, http.StatusOK, res)
 }
 
 // PasskeyLoginOptions handles POST /api/v1/auth/passkey/login/options.
 func (h *AuthHandlers) PasskeyLoginOptions(w http.ResponseWriter, r *http.Request) {
-	opts, err := h.authUC.BeginLogin(r.Context())
+	ip := middleware.GetClientIP(r.Context())
+	opts, err := h.authUC.BeginLogin(r.Context(), ip)
 	if err != nil {
+		if errors.Is(err, auth.ErrRateLimitExceeded) {
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}
@@ -87,6 +116,12 @@ func (h *AuthHandlers) PasskeyLoginVerify(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to read request body")
+		return
+	}
+
 	ip := middleware.GetClientIP(r.Context())
 	ua := r.UserAgent()
 	reqID := r.Header.Get("X-Request-ID")
@@ -97,13 +132,17 @@ func (h *AuthHandlers) PasskeyLoginVerify(w http.ResponseWriter, r *http.Request
 		appVer = &v
 	}
 
-	res, err := h.authUC.FinishLogin(r.Context(), challengeID, r, rawDeviceID, platform, appVer, ip, ua, reqID)
+	res, err := h.authUC.FinishLogin(r.Context(), challengeID, payload, rawDeviceID, platform, appVer, ip, ua, reqID)
 	if err != nil {
+		if errors.Is(err, auth.ErrRateLimitExceeded) {
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
+			return
+		}
 		writeError(w, http.StatusUnauthorized, "AUTH_FAILED", err.Error())
 		return
 	}
 
-	applySessionCookie(w, r, res.Token)
+	h.applySessionCookie(w, r, res.Token)
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -115,8 +154,13 @@ func (h *AuthHandlers) PasskeyRegisterOptions(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	opts, err := h.authUC.BeginRegisterCredential(r.Context(), userID)
+	ip := middleware.GetClientIP(r.Context())
+	opts, err := h.authUC.BeginRegisterCredential(r.Context(), userID, ip)
 	if err != nil {
+		if errors.Is(err, auth.ErrRateLimitExceeded) {
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}
@@ -141,12 +185,22 @@ func (h *AuthHandlers) PasskeyRegisterVerify(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to read request body")
+		return
+	}
+
 	ip := middleware.GetClientIP(r.Context())
 	ua := r.UserAgent()
 	reqID := r.Header.Get("X-Request-ID")
 
-	cred, err := h.authUC.FinishRegisterCredential(r.Context(), userID, challengeID, r, ip, ua, reqID)
+	cred, err := h.authUC.FinishRegisterCredential(r.Context(), userID, challengeID, payload, ip, ua, reqID)
 	if err != nil {
+		if errors.Is(err, auth.ErrRateLimitExceeded) {
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "REGISTRATION_FAILED", err.Error())
 		return
 	}
@@ -178,6 +232,10 @@ func (h *AuthHandlers) DeletePasskeyCredential(w http.ResponseWriter, r *http.Re
 	reqID := r.Header.Get("X-Request-ID")
 
 	if err := h.authUC.DeleteCredential(r.Context(), userID, credID, ip, ua, reqID); err != nil {
+		if errors.Is(err, auth.ErrRateLimitExceeded) {
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "DELETE_FAILED", err.Error())
 		return
 	}
@@ -185,31 +243,92 @@ func (h *AuthHandlers) DeletePasskeyCredential(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "credential_id": credID.String()})
 }
 
-func applySessionCookie(w http.ResponseWriter, r *http.Request, token string) {
+// RevokeSession handles POST /api/v1/auth/session/revoke (session-protected).
+func (h *AuthHandlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
+	var token string
+	if cookie, err := r.Cookie("session_token"); err == nil && cookie.Value != "" {
+		token = cookie.Value
+	}
+	if token == "" {
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+			token = strings.TrimSpace(authHeader[7:])
+		}
+	}
+
+	if token == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "Session token required")
+		return
+	}
+
+	ip := middleware.GetClientIP(r.Context())
+	ua := r.UserAgent()
+	reqID := r.Header.Get("X-Request-ID")
+
+	if err := h.sessionUC.Revoke(r.Context(), token, ip, ua, reqID); err != nil {
+		writeError(w, http.StatusInternalServerError, "REVOKE_FAILED", err.Error())
+		return
+	}
+
+	// Clear session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session_token",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+}
+
+// RevokeAllSessions handles POST /api/v1/auth/sessions/revoke-all (session-protected).
+func (h *AuthHandlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == uuid.Nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Active session required")
+		return
+	}
+
+	ip := middleware.GetClientIP(r.Context())
+	ua := r.UserAgent()
+	reqID := r.Header.Get("X-Request-ID")
+
+	if err := h.sessionUC.RevokeAllForUser(r.Context(), userID, ip, ua, reqID); err != nil {
+		writeError(w, http.StatusInternalServerError, "REVOKE_ALL_FAILED", err.Error())
+		return
+	}
+
+	// Clear session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session_token",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "all_sessions_revoked"})
+}
+
+func (h *AuthHandlers) applySessionCookie(w http.ResponseWriter, r *http.Request, token string) {
+	isTLS := r.TLS != nil
+	if !isTLS && h.cfg != nil && h.cfg.TLSTerminationIngress {
+		if middleware.IsTrustedProxy(r.RemoteAddr, h.cfg.TrustedProxies) {
+			forwardedProto := r.Header.Get("X-Forwarded-Proto")
+			if strings.EqualFold(forwardedProto, "https") {
+				isTLS = true
+			}
+		}
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session_token",
 		Value:    token,
 		Path:     "/",
+		MaxAge:   30 * 86400,
 		HttpOnly: true,
-		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   30 * 24 * 3600,
-	})
-}
-
-func writeJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
-}
-
-func writeError(w http.ResponseWriter, status int, code, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error": map[string]any{
-			"code":    code,
-			"message": msg,
-		},
+		Secure:   isTLS,
+		SameSite: http.SameSiteLaxMode,
 	})
 }

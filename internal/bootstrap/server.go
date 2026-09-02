@@ -10,12 +10,14 @@ func InitHTTPServer(cfg *config.Config, infra *Infrastructures, services *Servic
 	return transportHTTP.NewServer(
 		handlers.Health,
 		handlers.Auth,
+		handlers.Device,
 		handlers.Ticket,
 		handlers.Client,
 		handlers.Me,
 		handlers.WSServer,
 		services.Session,
 		infra.Limiter,
+		infra.Metrics,
 		cfg,
 		infra.Logger,
 	)

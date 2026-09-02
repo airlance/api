@@ -34,6 +34,19 @@ func SetClientIP(ctx context.Context, ip string) context.Context {
 	return context.WithValue(ctx, clientIPKey{}, ip)
 }
 
+// IsTrustedProxy checks whether a given remote address belongs to one of the configured trusted proxy CIDRs.
+func IsTrustedProxy(remoteAddr string, trustedProxies []*net.IPNet) bool {
+	remoteHost, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		remoteHost = remoteAddr
+	}
+	remoteIP := net.ParseIP(remoteHost)
+	if remoteIP == nil {
+		return false
+	}
+	return isIPTrusted(remoteIP, trustedProxies)
+}
+
 func resolveClientIP(r *http.Request, trustedProxies []*net.IPNet) string {
 	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

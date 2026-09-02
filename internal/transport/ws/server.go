@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -48,14 +49,7 @@ func NewServer(
 	cfg *config.Config,
 	log *logger.Logger,
 ) *Server {
-	return &Server{
-		upgrader: websocket.Upgrader{
-			ReadBufferSize:  int(cfg.MaxWSFrameBytes),
-			WriteBufferSize: int(cfg.MaxWSFrameBytes),
-			CheckOrigin: func(r *http.Request) bool {
-				return true // Cross-origin checked via ticket
-			},
-		},
+	s := &Server{
 		ticketRepo:     ticketRepo,
 		sessionRepo:    sessionRepo,
 		deviceRepo:     deviceRepo,
@@ -67,13 +61,58 @@ func NewServer(
 		cfg:            cfg,
 		log:            log.Named(logger.CategoryWS),
 	}
+
+	allowedOrigins := cfg.AllowedWSOrigins
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = cfg.WebAuthnRPOrigins
+	}
+
+	s.upgrader = websocket.Upgrader{
+		ReadBufferSize:  int(cfg.MaxWSFrameBytes),
+		WriteBufferSize: int(cfg.MaxWSFrameBytes),
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				// Non-browser client
+				return true
+			}
+			for _, allowed := range allowedOrigins {
+				if strings.EqualFold(origin, allowed) || allowed == "*" {
+					return true
+				}
+			}
+			s.log.Warn("Rejected WebSocket upgrade due to unauthorized origin", "origin", origin)
+			return false
+		},
+	}
+
+	return s
 }
 
 // ServeHTTP handles the /ws upgrade endpoint.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientIP := middleware.GetClientIP(r.Context())
+	maskSecret := s.cfg.AuditSubjectHMACKeyRing.Keys[s.cfg.AuditSubjectHMACKeyRing.CurrentKeyID]
 
-	// 1. Pre-upgrade IP rate limiting (fail-closed to protect from DoS)
+	// 1. Enforce TLS requirement
+	isTLS := r.TLS != nil
+	if !isTLS && s.cfg.TLSTerminationIngress {
+		// Check if terminated at a trusted proxy
+		if middleware.IsTrustedProxy(r.RemoteAddr, s.cfg.TrustedProxies) {
+			forwardedProto := r.Header.Get("X-Forwarded-Proto")
+			if strings.EqualFold(forwardedProto, "https") || strings.EqualFold(forwardedProto, "wss") {
+				isTLS = true
+			}
+		}
+	}
+
+	if s.cfg.RequireTLS && !isTLS {
+		s.log.Warn("Rejected plaintext WebSocket upgrade request", "masked_ip", logger.MaskIdentifier(clientIP, maskSecret))
+		http.Error(w, "TLS is mandatory for WebSocket connections", http.StatusUpgradeRequired)
+		return
+	}
+
+	// 2. Pre-upgrade IP rate limiting (fail-closed to protect from DoS)
 	if s.limiter != nil {
 		limits := []domainRL.Limit{
 			{Name: "ws_upgrade_burst", Max: 20, Window: 10 * time.Second},
@@ -81,49 +120,53 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		res, err := s.limiter.Allow(r.Context(), fmt.Sprintf("ws_preupgrade:ip:%s", clientIP), limits)
 		if err != nil || (len(res) > 0 && !res[0].Allowed) {
-			s.log.Warn("WS pre-upgrade rate limit exceeded or limiter unavailable", "ip", clientIP)
+			s.log.Warn("WS pre-upgrade rate limit exceeded or limiter unavailable", "masked_ip", logger.MaskIdentifier(clientIP, maskSecret))
 			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
 			return
 		}
 	}
 
-	// 2. Extract ticket
+	// 3. Extract ticket
 	ticketID := r.Header.Get("X-WS-Ticket")
 	if ticketID == "" {
 		ticketID = r.URL.Query().Get("ticket")
 	}
 	if ticketID == "" {
-		s.log.Debug("WS upgrade missing ticket", "ip", clientIP)
+		s.log.Debug("WS upgrade missing ticket")
 		http.Error(w, "Missing WebSocket Ticket", http.StatusUnauthorized)
 		return
 	}
 
-	// 3. Atomically consume ticket (DELETE ... RETURNING in Redis)
-	ticket, err := s.ticketRepo.ConsumeByID(r.Context(), ticketID)
+	// 4. Pre-upgrade timeout context
+	preCtx, cancelPre := context.WithTimeout(r.Context(), s.cfg.WSPreUpgradeTimeout)
+	defer cancelPre()
+
+	// Atomically consume ticket (DELETE ... RETURNING in Redis)
+	ticket, err := s.ticketRepo.ConsumeByID(preCtx, ticketID)
 	if err != nil {
-		s.log.Warn("Invalid or already consumed WS ticket", "ip", clientIP, "err", err)
+		s.log.Warn("Invalid or already consumed WS ticket", "masked_ip", logger.MaskIdentifier(clientIP, maskSecret))
 		http.Error(w, "Invalid or Expired Ticket", http.StatusUnauthorized)
 		return
 	}
 
-	// 4. Validate underlying session and device state before handshake
-	sess, err := s.sessionRepo.GetByID(r.Context(), ticket.SessionID)
+	// Validate underlying session and device state before handshake
+	sess, err := s.sessionRepo.GetByID(preCtx, ticket.SessionID)
 	if err != nil || sess == nil || !sess.IsValid() {
-		s.log.Warn("WS ticket referenced invalid session", "session_id", ticket.SessionID.String())
+		s.log.Warn("WS ticket referenced invalid session", "masked_session", logger.MaskUUID(ticket.SessionID, maskSecret))
 		http.Error(w, "Session Revoked or Expired", http.StatusUnauthorized)
 		return
 	}
 
 	if ticket.DeviceID != nil {
-		dev, err := s.deviceRepo.GetByID(r.Context(), *ticket.DeviceID)
+		dev, err := s.deviceRepo.GetByID(preCtx, *ticket.DeviceID)
 		if err != nil || dev == nil || !dev.IsValid() {
-			s.log.Warn("WS ticket referenced invalid device", "device_id", ticket.DeviceID.String())
+			s.log.Warn("WS ticket referenced invalid device", "masked_device", logger.MaskUUID(*ticket.DeviceID, maskSecret))
 			http.Error(w, "Device Revoked", http.StatusUnauthorized)
 			return
 		}
 	}
 
-	// 5. Connection limits check
+	// 5. Connection limits pre-check
 	if s.registry.Count() >= s.cfg.MaxWSConnections {
 		s.log.Warn("Max server WebSocket connections reached", "count", s.registry.Count())
 		http.Error(w, "Server Busy", http.StatusServiceUnavailable)
@@ -132,81 +175,106 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	userConns := s.registry.ForUser(ticket.UserID)
 	if len(userConns) >= s.cfg.MaxWSConnectionsPerUser {
-		s.log.Warn("Max per-user WebSocket connections reached", "user_id", ticket.UserID.String())
+		s.log.Warn("Max per-user WebSocket connections reached", "masked_user", logger.MaskUUID(ticket.UserID, maskSecret))
 		http.Error(w, "Too Many Connections for User", http.StatusTooManyRequests)
+		return
+	}
+
+	if s.registry.CountForIP(clientIP) >= s.cfg.MaxWSConnectionsPerIP {
+		s.log.Warn("Max per-IP WebSocket connections reached", "masked_ip", logger.MaskIdentifier(clientIP, maskSecret))
+		http.Error(w, "Too Many Connections for IP", http.StatusTooManyRequests)
 		return
 	}
 
 	// 6. Upgrade connection to WebSocket
 	wsConn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		s.log.Error(err, "WebSocket upgrade failed", "ip", clientIP)
+		s.log.Error(err, "WebSocket upgrade failed", "masked_ip", logger.MaskIdentifier(clientIP, maskSecret))
 		return
 	}
 
 	// 7. Perform Wireauth v2 handshake
-	_ = wsConn.SetReadDeadline(time.Now().Add(s.cfg.WSHandshakeTimeout))
-	_ = wsConn.SetWriteDeadline(time.Now().Add(s.cfg.WSHandshakeTimeout))
+	var c2sKey, s2cKey []byte
+	if s.wireauthServer != nil {
+		_ = wsConn.SetReadDeadline(time.Now().Add(s.cfg.WSHandshakeTimeout))
+		_ = wsConn.SetWriteDeadline(time.Now().Add(s.cfg.WSHandshakeTimeout))
 
-	handshakeCtx, cancelHandshake := context.WithTimeout(r.Context(), s.cfg.WSHandshakeTimeout)
-	defer cancelHandshake()
+		handshakeCtx, cancelHandshake := context.WithTimeout(r.Context(), s.cfg.WSHandshakeTimeout)
+		defer cancelHandshake()
 
-	wireauthSession, err := s.wireauthServer.Perform(handshakeCtx, wsConn)
-	if err != nil {
-		s.log.Warn("Wireauth v2 handshake failed", "ip", clientIP, "err", err)
-		_ = wsConn.Close()
-		return
+		wireauthSession, err := s.wireauthServer.Perform(handshakeCtx, wsConn)
+		if err != nil {
+			s.log.Warn("Wireauth v2 handshake failed", "masked_ip", logger.MaskIdentifier(clientIP, maskSecret))
+			_ = wsConn.Close()
+			return
+		}
+		c2sKey = wireauthSession.ClientToServerKey
+		s2cKey = wireauthSession.ServerToClientKey
+
+		// Reset deadlines for normal transport
+		_ = wsConn.SetReadDeadline(time.Time{})
+		_ = wsConn.SetWriteDeadline(time.Time{})
+	} else {
+		c2sKey = make([]byte, 32)
+		s2cKey = make([]byte, 32)
 	}
 
-	// Reset deadlines for normal transport
-	_ = wsConn.SetReadDeadline(time.Time{})
-	_ = wsConn.SetWriteDeadline(time.Time{})
-
-	// 8. Construct session and start lifecycle loops
+	// 8. Construct session and register atomically
 	wsSession := NewSession(
 		r.Context(),
 		wsConn,
 		ticket.UserID,
 		ticket.SessionID,
 		ticket.DeviceID,
-		wireauthSession.ClientToServerKey,
-		wireauthSession.ServerToClientKey,
+		clientIP,
+		c2sKey,
+		s2cKey,
 		s.registry,
 		s.router,
 		s.cfg,
 		s.log,
 	)
 
-	s.log.Info("WS connection established", "user_id", ticket.UserID.String(), "session_id", ticket.SessionID.String())
+	if err := s.registry.TryRegister(wsSession, s.cfg.MaxWSConnections, s.cfg.MaxWSConnectionsPerUser, s.cfg.MaxWSConnectionsPerIP); err != nil {
+		s.log.Warn("WebSocket registration failed limit check", "err", err)
+		wsSession.Close("connection_limit_reached")
+		return
+	}
+
+	s.log.Info("WS connection established", "masked_user", logger.MaskUUID(ticket.UserID, maskSecret), "masked_session", logger.MaskUUID(ticket.SessionID, maskSecret))
 	wsSession.StartLifecycle()
 }
 
-// StartEventBusListeners listens for session revocation events to terminate active WS channels.
+// Shutdown gracefully drains active WebSocket connections.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.log.Info("Draining WebSocket connections")
+	s.registry.Drain(2 * time.Second)
+	return nil
+}
+
+// StartEventBusListeners listens for session and device revocation events to terminate active WS channels.
 func (s *Server) StartEventBusListeners(ctx context.Context) error {
 	if s.eventBus == nil {
 		return nil
 	}
 
-	// Listen for session.revoked
 	sessionSub, err := s.eventBus.Subscribe(ctx, domainEB.TopicSessionRevoked)
 	if err != nil {
 		return fmt.Errorf("ws server: subscribe session.revoked error: %w", err)
 	}
 
-	// Listen for device.revoked
 	deviceSub, err := s.eventBus.Subscribe(ctx, domainEB.TopicDeviceRevoked)
 	if err != nil {
 		return fmt.Errorf("ws server: subscribe device.revoked error: %w", err)
 	}
 
-	// Listen for user.sessions_revoked
 	userSub, err := s.eventBus.Subscribe(ctx, domainEB.TopicUserSessionsRevoked)
 	if err != nil {
 		return fmt.Errorf("ws server: subscribe user.sessions_revoked error: %w", err)
 	}
 
 	go s.listenRevocationEvents(ctx, sessionSub, func(payload any) {
-		if sid, ok := payload.(uuid.UUID); ok {
+		if sid, ok := extractUUID(payload); ok {
 			for _, conn := range s.registry.ForSession(sid) {
 				conn.Close("session_revoked")
 			}
@@ -214,7 +282,7 @@ func (s *Server) StartEventBusListeners(ctx context.Context) error {
 	})
 
 	go s.listenRevocationEvents(ctx, deviceSub, func(payload any) {
-		if did, ok := payload.(uuid.UUID); ok {
+		if did, ok := extractUUID(payload); ok {
 			for _, conn := range s.registry.ForDevice(did) {
 				conn.Close("device_revoked")
 			}
@@ -222,7 +290,7 @@ func (s *Server) StartEventBusListeners(ctx context.Context) error {
 	})
 
 	go s.listenRevocationEvents(ctx, userSub, func(payload any) {
-		if uid, ok := payload.(uuid.UUID); ok {
+		if uid, ok := extractUUID(payload); ok {
 			for _, conn := range s.registry.ForUser(uid) {
 				conn.Close("user_sessions_revoked")
 			}
@@ -230,6 +298,18 @@ func (s *Server) StartEventBusListeners(ctx context.Context) error {
 	})
 
 	return nil
+}
+
+func extractUUID(payload any) (uuid.UUID, bool) {
+	switch v := payload.(type) {
+	case uuid.UUID:
+		return v, true
+	case string:
+		id, err := uuid.Parse(v)
+		return id, err == nil
+	default:
+		return uuid.Nil, false
+	}
 }
 
 func (s *Server) listenRevocationEvents(ctx context.Context, sub domainEB.Subscription, handler func(payload any)) {

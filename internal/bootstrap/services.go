@@ -34,15 +34,24 @@ func InitServices(cfg *config.Config, infra *Infrastructures, repos *Repositorie
 		sessionService,
 		infra.TxManager,
 		infra.WebAuthnEngine,
-		cfg,
+		infra.Limiter,
+		infra.EventBus,
+		cfg.DeviceHMACKeyRing,
 	)
+
+	apiAuthKeyRing := apiauth.KeyRing{
+		CurrentKID:  cfg.JWTKeyRing.CurrentKID,
+		PrivateKeys: cfg.JWTKeyRing.PrivateKeys,
+	}
 
 	apiAuthService := apiauth.NewUsecase(
 		repos.APIClient,
 		repos.RateLimitTier,
 		repos.Audit,
 		infra.TxManager,
-		cfg,
+		apiAuthKeyRing,
+		cfg.APITokenTTL,
+		cfg.ServiceName,
 	)
 
 	return &Services{

@@ -29,6 +29,7 @@ type Session struct {
 	UserID    uuid.UUID
 	SessionID uuid.UUID
 	DeviceID  *uuid.UUID
+	ClientIP  string
 
 	conn              *websocket.Conn
 	clientToServerKey []byte
@@ -55,6 +56,7 @@ func NewSession(
 	conn *websocket.Conn,
 	userID, sessionID uuid.UUID,
 	deviceID *uuid.UUID,
+	clientIP string,
 	c2sKey, s2cKey []byte,
 	registry ConnectionRegistry,
 	router *Router,
@@ -71,6 +73,7 @@ func NewSession(
 		UserID:            userID,
 		SessionID:         sessionID,
 		DeviceID:          deviceID,
+		ClientIP:          clientIP,
 		conn:              conn,
 		clientToServerKey: c2sKey,
 		serverToClientKey: s2cKey,
@@ -115,7 +118,6 @@ func (s *Session) SendError(corrID uint64, code fbWS.ErrorCode, msg string, retr
 
 // StartLifecycle begins read and write loops. Blocks until connection terminates.
 func (s *Session) StartLifecycle() {
-	s.registry.Add(s)
 	defer s.registry.Remove(s)
 	defer s.Close("lifecycle_terminated")
 
@@ -126,11 +128,16 @@ func (s *Session) StartLifecycle() {
 func (s *Session) readLoop() {
 	defer s.cancel()
 
+	idleTimeout := s.cfg.WSIdleTimeout
+	if idleTimeout <= 0 {
+		idleTimeout = 60 * time.Second
+	}
+
 	s.conn.SetReadLimit(s.cfg.MaxWSFrameBytes)
-	_ = s.conn.SetReadDeadline(time.Now().Add(s.cfg.WSIdleTimeout))
+	_ = s.conn.SetReadDeadline(time.Now().Add(idleTimeout))
 
 	s.conn.SetPongHandler(func(string) error {
-		_ = s.conn.SetReadDeadline(time.Now().Add(s.cfg.WSIdleTimeout))
+		_ = s.conn.SetReadDeadline(time.Now().Add(idleTimeout))
 		return nil
 	})
 
@@ -148,7 +155,7 @@ func (s *Session) readLoop() {
 			break
 		}
 
-		_ = s.conn.SetReadDeadline(time.Now().Add(s.cfg.WSIdleTimeout))
+		_ = s.conn.SetReadDeadline(time.Now().Add(idleTimeout))
 
 		// Decrypt packet
 		plaintext, seq, err := wireauth.DecryptAESGCM(s.clientToServerKey, packet)
@@ -175,7 +182,16 @@ func (s *Session) readLoop() {
 }
 
 func (s *Session) writeLoop() {
-	ticker := time.NewTicker(s.cfg.WSIdleTimeout / 2)
+	idleInterval := s.cfg.WSIdleTimeout / 2
+	if idleInterval <= 0 {
+		idleInterval = 30 * time.Second
+	}
+	writeTimeout := s.cfg.HTTPWriteTimeout
+	if writeTimeout <= 0 {
+		writeTimeout = 5 * time.Second
+	}
+
+	ticker := time.NewTicker(idleInterval)
 	defer ticker.Stop()
 
 	for {
@@ -186,12 +202,12 @@ func (s *Session) writeLoop() {
 			if !ok {
 				return
 			}
-			_ = s.conn.SetWriteDeadline(time.Now().Add(s.cfg.HTTPWriteTimeout))
+			_ = s.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			if err := s.conn.WriteMessage(websocket.BinaryMessage, packet); err != nil {
 				return
 			}
 		case <-ticker.C:
-			_ = s.conn.SetWriteDeadline(time.Now().Add(s.cfg.HTTPWriteTimeout))
+			_ = s.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			if err := s.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}

@@ -6,19 +6,22 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"airlance.org/api/internal/domain/tx"
 )
 
 type txContextKey struct{}
 
-// TxManager provides an interface for executing operations within an atomic transaction.
-type TxManager interface {
-	WithTx(ctx context.Context, fn func(ctx context.Context) error) error
-}
+// TxManager alias for backward compatibility.
+type TxManager = tx.TxManager
 
-// PostgresTxManager implements TxManager using pgxpool.Pool.
+// PostgresTxManager implements tx.TxManager using pgxpool.Pool.
 type PostgresTxManager struct {
 	pool *pgxpool.Pool
 }
+
+// Ensure PostgresTxManager implements tx.TxManager.
+var _ tx.TxManager = (*PostgresTxManager)(nil)
 
 // NewTxManager constructs a PostgresTxManager.
 func NewTxManager(pool *pgxpool.Pool) *PostgresTxManager {
@@ -33,22 +36,22 @@ func (tm *PostgresTxManager) WithTx(ctx context.Context, fn func(ctx context.Con
 		return fn(ctx)
 	}
 
-	tx, err := tm.pool.BeginTx(ctx, pgx.TxOptions{})
+	txInstance, err := tm.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("database: begin tx failed: %w", err)
 	}
 
-	txCtx := context.WithValue(ctx, txContextKey{}, tx)
+	txCtx := context.WithValue(ctx, txContextKey{}, txInstance)
 
 	defer func() {
-		_ = tx.Rollback(ctx)
+		_ = txInstance.Rollback(ctx)
 	}()
 
 	if err := fn(txCtx); err != nil {
 		return err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
+	if err := txInstance.Commit(ctx); err != nil {
 		return fmt.Errorf("database: commit tx failed: %w", err)
 	}
 
@@ -57,8 +60,8 @@ func (tm *PostgresTxManager) WithTx(ctx context.Context, fn func(ctx context.Con
 
 // GetExecutor returns the current transaction if present in context, or the fallback pool.
 func GetExecutor(ctx context.Context, pool *pgxpool.Pool) DBExecutor {
-	if tx, ok := ctx.Value(txContextKey{}).(pgx.Tx); ok && tx != nil {
-		return tx
+	if txInstance, ok := ctx.Value(txContextKey{}).(pgx.Tx); ok && txInstance != nil {
+		return txInstance
 	}
 	return pool
 }

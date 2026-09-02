@@ -14,6 +14,7 @@ type RateLimitConfig struct {
 	Limiter        domainRL.Limiter
 	KeyExtractor   func(r *http.Request) string
 	LimitsProvider func(r *http.Request) []domainRL.Limit
+	MaskSecret     []byte
 	FailClosed     bool
 }
 
@@ -46,7 +47,7 @@ func RateLimitMiddleware(cfg RateLimitConfig) func(http.Handler) http.Handler {
 			results, err := cfg.Limiter.Allow(r.Context(), key, limits)
 			if err != nil {
 				log := logger.FromContext(r.Context()).Named(logger.CategoryRateLimit)
-				log.Error(err, "Rate limiter backend check failed", "key", key)
+				log.Error(err, "Rate limiter backend check failed", "masked_key", logger.MaskIdentifier(key, cfg.MaskSecret))
 
 				if cfg.FailClosed {
 					writeJSONError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Rate limiting service temporarily unavailable")

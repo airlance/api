@@ -15,6 +15,11 @@
 - Format with `gofmt`; use standard Go naming and error-wrapping conventions.
 - Keep exported identifiers documented. Prefer typed/sentinel errors and
   `errors.Is`/`errors.As` over matching error strings.
+- Do not add package comments that merely restate the package name or an
+  obvious implementation detail (for example, `// Package config defines the
+  application configuration ...`). Add a package comment only when it conveys
+  non-obvious package-level purpose, constraints, or usage; document exported
+  identifiers where that documentation is useful to callers.
 - Pass `context.Context` as the first parameter for I/O and usecase methods;
   propagate cancellation and deadlines to Postgres, Redis, and EventBus calls.
 - Make transaction boundaries explicit. Security mutations and their audit
@@ -49,6 +54,18 @@
   security/protocol changes also require the relevant integration or contract
   test.
 - Run `go test ./...` and `go vet ./...` for Go changes.
+- In the Codex filesystem sandbox, the default Go build cache under the user
+  library may be inaccessible. Run checks with a writable temporary cache
+  instead of treating that permission error as a code failure or requesting
+  broader system-cache access:
+  ```bash
+  GOCACHE=/private/tmp/airlance-go-build-cache go test ./...
+  GOCACHE=/private/tmp/airlance-go-build-cache go vet ./...
+  ```
+- If an e2e test using `httptest` is then blocked from opening a local
+  loopback listener, rerun the same command with the narrowly scoped
+  escalation required for local test networking. Do not mistake either
+  sandbox restriction for a test failure in the application code.
 
 ## Database and migrations
 

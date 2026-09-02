@@ -1,4 +1,3 @@
-// Package config defines the application configuration loaded from environment variables and defaults.
 package config
 
 import (
@@ -14,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"airlance.org/api/internal/domain/crypto"
 )
 
 var (
@@ -21,11 +22,8 @@ var (
 	ErrInvalidConfig = errors.New("config: invalid configuration")
 )
 
-// KeyRing represents versioned HMAC or asymmetric keys.
-type KeyRing struct {
-	CurrentKeyID uint16
-	Keys         map[uint16][]byte
-}
+// KeyRing alias to domain KeyRing.
+type KeyRing = crypto.KeyRing
 
 // Ed25519KeyRing represents versioned Ed25519 signing keys for external API JWTs.
 type Ed25519KeyRing struct {
@@ -41,6 +39,13 @@ type Config struct {
 	HTTPPort    int
 	ServiceName string
 
+	// TLS Listener & Termination
+	TLSListenerEnabled    bool
+	TLSCertFile           string
+	TLSKeyFile            string
+	TLSTerminationIngress bool
+	RequireTLS            bool
+
 	// Database & Cache
 	DatabaseDSN string
 	RedisURL    string
@@ -53,13 +58,14 @@ type Config struct {
 	LogLevel  string
 	LogFormat string // "json" or "console"
 
-	// Trusted Proxies for Client IP resolution
+	// Trusted Proxies for Client IP & TLS termination resolution
 	TrustedProxies []*net.IPNet
 
-	// Security: WebAuthn
+	// Security: WebAuthn & WS Origins
 	WebAuthnRPID          string
 	WebAuthnRPDisplayName string
 	WebAuthnRPOrigins     []string
+	AllowedWSOrigins      []string
 
 	// Security: Sessions & Tokens
 	SessionTTL  time.Duration
@@ -97,10 +103,18 @@ type Config struct {
 
 // LoadFromEnv loads configuration from environment variables with sensible defaults.
 func LoadFromEnv() (*Config, error) {
+	env := getEnv("APP_ENV", "development")
+	isDevOrTest := env == "development" || env == "test"
+
 	cfg := &Config{
-		Env:                     getEnv("APP_ENV", "development"),
+		Env:                     env,
 		HTTPPort:                getEnvInt("PORT", 8080),
 		ServiceName:             getEnv("SERVICE_NAME", "airlance-api"),
+		TLSListenerEnabled:      getEnvBool("TLS_LISTENER_ENABLED", false),
+		TLSCertFile:             getEnv("TLS_CERT_FILE", ""),
+		TLSKeyFile:              getEnv("TLS_KEY_FILE", ""),
+		TLSTerminationIngress:   getEnvBool("TLS_TERMINATION_INGRESS", false),
+		RequireTLS:              getEnvBool("REQUIRE_TLS", !isDevOrTest),
 		DatabaseDSN:             getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/airlance?sslmode=disable"),
 		RedisURL:                getEnv("REDIS_URL", "redis://localhost:6379/0"),
 		MinSchemaVersion:        uint(getEnvInt("MIN_SCHEMA_VERSION", 1)),
@@ -109,7 +123,8 @@ func LoadFromEnv() (*Config, error) {
 		LogFormat:               getEnv("LOG_FORMAT", "json"),
 		WebAuthnRPID:            getEnv("WEBAUTHN_RP_ID", "localhost"),
 		WebAuthnRPDisplayName:   getEnv("WEBAUTHN_RP_DISPLAY_NAME", "Airlance"),
-		WebAuthnRPOrigins:       getEnvSlice("WEBAUTHN_RP_ORIGINS", []string{"http://localhost:3000", "http://localhost:8080"}),
+		WebAuthnRPOrigins:       getEnvSlice("WEBAUTHN_RP_ORIGINS", []string{"http://localhost:3000", "http://localhost:8080", "https://localhost:3000", "https://localhost:8080"}),
+		AllowedWSOrigins:        getEnvSlice("ALLOWED_WS_ORIGINS", []string{"http://localhost:3000", "http://localhost:8080", "https://localhost:3000", "https://localhost:8080"}),
 		SessionTTL:              getEnvDuration("SESSION_TTL", 30*24*time.Hour),
 		WSTicketTTL:             getEnvDuration("WS_TICKET_TTL", 30*time.Second),
 		APITokenTTL:             getEnvDuration("API_TOKEN_TTL", 15*time.Minute),
@@ -138,21 +153,29 @@ func LoadFromEnv() (*Config, error) {
 	cfg.TrustedProxies = trusted
 
 	// Parse Device HMAC KeyRing
-	deviceRing, err := parseHMACKeyRing("DEVICE_HMAC_KEYS", "DEVICE_HMAC_CURRENT_KEY_ID", "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", 1)
+	deviceDefault := ""
+	if isDevOrTest {
+		deviceDefault = "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	}
+	deviceRing, err := parseHMACKeyRing("DEVICE_HMAC_KEYS", "DEVICE_HMAC_CURRENT_KEY_ID", deviceDefault, 1, isDevOrTest)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid device HMAC keys: %v", ErrInvalidConfig, err)
 	}
 	cfg.DeviceHMACKeyRing = deviceRing
 
 	// Parse Audit Subject HMAC KeyRing
-	auditRing, err := parseHMACKeyRing("AUDIT_HMAC_KEYS", "AUDIT_HMAC_CURRENT_KEY_ID", "1:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210", 1)
+	auditDefault := ""
+	if isDevOrTest {
+		auditDefault = "1:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+	}
+	auditRing, err := parseHMACKeyRing("AUDIT_HMAC_KEYS", "AUDIT_HMAC_CURRENT_KEY_ID", auditDefault, 1, isDevOrTest)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid audit subject HMAC keys: %v", ErrInvalidConfig, err)
 	}
 	cfg.AuditSubjectHMACKeyRing = auditRing
 
 	// Parse JWT Ed25519 KeyRing
-	jwtRing, err := parseEd25519KeyRing()
+	jwtRing, err := parseEd25519KeyRing(isDevOrTest)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid JWT keys: %v", ErrInvalidConfig, err)
 	}
@@ -170,6 +193,9 @@ func LoadFromEnv() (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%w: failed to parse wireauth RSA key: %v", ErrInvalidConfig, err)
 		}
+		if key.N.BitLen() < 2048 {
+			return nil, fmt.Errorf("%w: wireauth RSA key must be at least 2048 bits (got %d)", ErrInvalidConfig, key.N.BitLen())
+		}
 		cfg.WireauthPrivateKey = key
 		cfg.WireauthPrivateKeyPath = wireauthKeyPath
 	} else if wireauthKeyPEM != "" {
@@ -177,7 +203,20 @@ func LoadFromEnv() (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%w: failed to parse wireauth RSA key PEM: %v", ErrInvalidConfig, err)
 		}
+		if key.N.BitLen() < 2048 {
+			return nil, fmt.Errorf("%w: wireauth RSA key must be at least 2048 bits (got %d)", ErrInvalidConfig, key.N.BitLen())
+		}
 		cfg.WireauthPrivateKey = key
+	} else if !isDevOrTest {
+		return nil, fmt.Errorf("%w: WIREAUTH_RSA_KEY_PATH or WIREAUTH_RSA_KEY_PEM required in %s environment", ErrInvalidConfig, env)
+	}
+
+	if cfg.RequireTLS && !isDevOrTest {
+		hasLocalTLS := cfg.TLSListenerEnabled && cfg.TLSCertFile != "" && cfg.TLSKeyFile != ""
+		hasExplicitIngress := cfg.TLSTerminationIngress && len(cfg.TrustedProxies) > 0
+		if !hasLocalTLS && !hasExplicitIngress {
+			return nil, fmt.Errorf("%w: REQUIRE_TLS=true in %s requires either local TLS certificate/key (TLS_LISTENER_ENABLED, TLS_CERT_FILE, TLS_KEY_FILE) or explicit TLS_TERMINATION_INGRESS=true with TRUSTED_PROXIES", ErrInvalidConfig, env)
+		}
 	}
 
 	return cfg, nil
@@ -215,9 +254,26 @@ func parseCIDRs(raw string) ([]*net.IPNet, error) {
 	return res, nil
 }
 
-func parseHMACKeyRing(keysEnv, currentEnv, defaultKeys string, defaultCurrent uint16) (KeyRing, error) {
-	keysRaw := getEnv(keysEnv, defaultKeys)
-	currentID := uint16(getEnvInt(currentEnv, int(defaultCurrent)))
+func parseHMACKeyRing(keysEnv, currentEnv, defaultKeys string, defaultCurrent uint16, isDev bool) (KeyRing, error) {
+	keysRaw := os.Getenv(keysEnv)
+	if keysRaw == "" {
+		if !isDev || defaultKeys == "" {
+			return KeyRing{}, fmt.Errorf("missing required environment variable %s", keysEnv)
+		}
+		keysRaw = defaultKeys
+	}
+
+	currentIDVal := os.Getenv(currentEnv)
+	var currentID uint16
+	if currentIDVal == "" {
+		currentID = defaultCurrent
+	} else {
+		id64, err := strconv.ParseUint(currentIDVal, 10, 16)
+		if err != nil {
+			return KeyRing{}, fmt.Errorf("invalid %s: %v", currentEnv, err)
+		}
+		currentID = uint16(id64)
+	}
 
 	keyMap := make(map[uint16][]byte)
 	entries := strings.Split(keysRaw, ",")
@@ -228,13 +284,16 @@ func parseHMACKeyRing(keysEnv, currentEnv, defaultKeys string, defaultCurrent ui
 		}
 		parts := strings.SplitN(entry, ":", 2)
 		if len(parts) != 2 {
-			return KeyRing{}, fmt.Errorf("invalid key entry format (expected id:hex/base64): %s", entry)
+			return KeyRing{}, fmt.Errorf("invalid key entry format (expected id:secret): %s", entry)
 		}
 		idVal, err := strconv.ParseUint(parts[0], 10, 16)
 		if err != nil {
 			return KeyRing{}, fmt.Errorf("invalid key id: %s", parts[0])
 		}
 		secret := []byte(parts[1])
+		if len(secret) < 32 {
+			return KeyRing{}, fmt.Errorf("key id %d size must be at least 32 bytes (got %d bytes)", idVal, len(secret))
+		}
 		keyMap[uint16(idVal)] = secret
 	}
 
@@ -251,7 +310,7 @@ func parseHMACKeyRing(keysEnv, currentEnv, defaultKeys string, defaultCurrent ui
 	}, nil
 }
 
-func parseEd25519KeyRing() (Ed25519KeyRing, error) {
+func parseEd25519KeyRing(isDev bool) (Ed25519KeyRing, error) {
 	currentKID := getEnv("JWT_CURRENT_KID", "key-1")
 	keysEnv := getEnv("JWT_ED25519_KEYS", "")
 
@@ -259,7 +318,10 @@ func parseEd25519KeyRing() (Ed25519KeyRing, error) {
 	pubMap := make(map[string]ed25519.PublicKey)
 
 	if keysEnv == "" {
-		// Generate deterministic or default test key pair if in dev
+		if !isDev {
+			return Ed25519KeyRing{}, errors.New("missing required environment variable JWT_ED25519_KEYS")
+		}
+		// Generate deterministic default test key pair in dev/test
 		seed := []byte("01234567890123456789012345678901") // 32 bytes
 		priv := ed25519.NewKeyFromSeed(seed)
 		pub := priv.Public().(ed25519.PublicKey)
@@ -374,6 +436,16 @@ func getEnvSlice(key string, def []string) []string {
 			}
 		}
 		return res
+	}
+	return def
+}
+
+func getEnvBool(key string, def bool) bool {
+	if val := os.Getenv(key); val != "" {
+		b, err := strconv.ParseBool(val)
+		if err == nil {
+			return b
+		}
 	}
 	return def
 }

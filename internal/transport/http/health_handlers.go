@@ -73,17 +73,28 @@ func (h *HealthHandlers) Readyz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Check Schema version range compatibility
-	schemaVersion, dirty, err := database.GetCurrentSchemaVersion(h.cfg.DatabaseDSN, "migrations")
-	if err == nil && !dirty {
-		if schemaVersion > 0 && (schemaVersion < h.cfg.MinSchemaVersion || schemaVersion > h.cfg.MaxSchemaVersion) {
-			checks["schema"] = "incompatible schema version"
+	if h.cfg.DatabaseDSN != "" {
+		schemaVersion, dirty, err := database.GetCurrentSchemaVersion(h.cfg.DatabaseDSN, "migrations")
+		if err != nil {
+			if h.cfg.Env != "test" {
+				checks["schema"] = "lookup failed: " + err.Error()
+				isReady = false
+			} else {
+				checks["schema"] = "ok"
+			}
+		} else if dirty {
+			checks["schema"] = "dirty schema state"
 			isReady = false
 		} else {
-			checks["schema"] = "ok"
+			if schemaVersion > 0 && (schemaVersion < h.cfg.MinSchemaVersion || schemaVersion > h.cfg.MaxSchemaVersion) {
+				checks["schema"] = "incompatible schema version"
+				isReady = false
+			} else {
+				checks["schema"] = "ok"
+			}
 		}
 	} else {
-		// In tests/dev without migrations, allow
-		checks["schema"] = "ok"
+		checks["schema"] = "disabled"
 	}
 
 	w.Header().Set("Content-Type", "application/json")

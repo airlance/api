@@ -28,12 +28,6 @@ func TestJWTMiddleware_Validation(t *testing.T) {
 		PublicKeys:  map[string]ed25519.PublicKey{"key-1": pub},
 	}
 
-	cfg := &config.Config{
-		ServiceName: "airlance-api",
-		APITokenTTL: 15 * time.Minute,
-		JWTKeyRing:  keyRing,
-	}
-
 	clientRepo := &mockClientRepoForJWT{
 		client: &apiclient.APIClient{
 			ID:         uuid.New(),
@@ -51,7 +45,12 @@ func TestJWTMiddleware_Validation(t *testing.T) {
 		},
 	}
 
-	uc := apiauth.NewUsecase(clientRepo, tierRepo, &mockAuditRepoForJWT{}, &mockTxManagerForJWT{}, cfg)
+	apiKeyRing := apiauth.KeyRing{
+		CurrentKID:  keyRing.CurrentKID,
+		PrivateKeys: keyRing.PrivateKeys,
+	}
+
+	uc := apiauth.NewUsecase(clientRepo, tierRepo, &mockAuditRepoForJWT{}, &mockTxManagerForJWT{}, apiKeyRing, 15*time.Minute, "airlance-api")
 
 	tokenStr, _, err := uc.IssueToken(context.Background(), clientRepo.client.ID, "raw-secret")
 	if err != nil {

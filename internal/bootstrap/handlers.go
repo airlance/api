@@ -11,6 +11,7 @@ import (
 type Handlers struct {
 	Health     *transportHTTP.HealthHandlers
 	Auth       *v1.AuthHandlers
+	Device     *v1.DeviceHandlers
 	Ticket     *v1.TicketHandlers
 	Client     *v1.ClientHandlers
 	Me         *v1.MeHandlers
@@ -22,7 +23,8 @@ type Handlers struct {
 // InitHandlers constructs handlers and routers for HTTP and WebSocket.
 func InitHandlers(cfg *config.Config, infra *Infrastructures, repos *Repositories, services *Services) *Handlers {
 	health := transportHTTP.NewHealthHandlers(infra.DBPool, infra.RedisClient, cfg)
-	authHandlers := v1.NewAuthHandlers(services.Auth)
+	authHandlers := v1.NewAuthHandlers(services.Auth, services.Session, cfg)
+	deviceHandlers := v1.NewDeviceHandlers(services.Auth)
 	ticketHandlers := v1.NewTicketHandlers(repos.WSTicket, cfg)
 	clientHandlers := v1.NewClientHandlers(services.APIAuth)
 	meHandlers := v1.NewMeHandlers(infra.Limiter)
@@ -45,6 +47,7 @@ func InitHandlers(cfg *config.Config, infra *Infrastructures, repos *Repositorie
 	return &Handlers{
 		Health:     health,
 		Auth:       authHandlers,
+		Device:     deviceHandlers,
 		Ticket:     ticketHandlers,
 		Client:     clientHandlers,
 		Me:         meHandlers,

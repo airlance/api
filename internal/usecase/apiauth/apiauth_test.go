@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"airlance.org/api/internal/config"
 	"airlance.org/api/internal/domain/apiclient"
 	"airlance.org/api/internal/domain/audit"
 )
@@ -111,19 +110,13 @@ func TestAPIAuthUsecase_CreateClientAndIssueToken(t *testing.T) {
 
 	seed := []byte("01234567890123456789012345678901")
 	priv := ed25519.NewKeyFromSeed(seed)
-	pub := priv.Public().(ed25519.PublicKey)
 
-	cfg := &config.Config{
-		ServiceName: "airlance-api",
-		APITokenTTL: 15 * time.Minute,
-		JWTKeyRing: config.Ed25519KeyRing{
-			CurrentKID:  "key-1",
-			PrivateKeys: map[string]ed25519.PrivateKey{"key-1": priv},
-			PublicKeys:  map[string]ed25519.PublicKey{"key-1": pub},
-		},
+	keyRing := KeyRing{
+		CurrentKID:  "key-1",
+		PrivateKeys: map[string]ed25519.PrivateKey{"key-1": priv},
 	}
 
-	uc := NewUsecase(clientRepo, tierRepo, auditRepo, txManager, cfg)
+	uc := NewUsecase(clientRepo, tierRepo, auditRepo, txManager, keyRing, 15*time.Minute, "airlance-api")
 	ctx := context.Background()
 	userID := uuid.New()
 

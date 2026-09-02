@@ -15,9 +15,11 @@ import (
 	"airlance.org/api/internal/config"
 	domainEB "airlance.org/api/internal/domain/eventbus"
 	domainRL "airlance.org/api/internal/domain/ratelimit"
+	"airlance.org/api/internal/domain/tx"
 	"airlance.org/api/internal/infrastructure/database"
 	"airlance.org/api/internal/infrastructure/eventbus"
 	"airlance.org/api/internal/infrastructure/logger"
+	"airlance.org/api/internal/infrastructure/metrics"
 	"airlance.org/api/internal/infrastructure/ratelimit"
 	"airlance.org/api/internal/infrastructure/webauthn"
 )
@@ -26,12 +28,13 @@ import (
 type Infrastructures struct {
 	DBPool         *pgxpool.Pool
 	RedisClient    *goredis.Client
-	TxManager      database.TxManager
+	TxManager      tx.TxManager
 	Logger         *logger.Logger
 	WebAuthnEngine *webauthn.Engine
 	EventBus       domainEB.EventBus
 	Limiter        domainRL.Limiter
 	WireauthServer *wireauth.Server
+	Metrics        *metrics.Registry
 }
 
 // InitInfrastructures connects to Postgres, Redis, and initializes crypto and event bus.
@@ -88,8 +91,9 @@ func InitInfrastructures(ctx context.Context, cfg *config.Config) (*Infrastructu
 	)
 
 	txManager := database.NewTxManager(dbPool)
-	eventBusInstance := eventbus.NewLocalEventBus()
+	eventBusInstance := eventbus.NewRedisEventBus(redisClient)
 	limiter := ratelimit.NewRedisLimiter(redisClient)
+	metricsReg := metrics.NewRegistry()
 
 	return &Infrastructures{
 		DBPool:         dbPool,
@@ -100,6 +104,7 @@ func InitInfrastructures(ctx context.Context, cfg *config.Config) (*Infrastructu
 		EventBus:       eventBusInstance,
 		Limiter:        limiter,
 		WireauthServer: wireauthServer,
+		Metrics:        metricsReg,
 	}, nil
 }
 

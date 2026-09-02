@@ -216,7 +216,11 @@ func TestE2E_FullFlow(t *testing.T) {
 	log := logger.New("error", "json")
 
 	sessionUCInstance := sessionUC.NewUsecase(sessionRepo, auditRepo, txManager, nil, 24*time.Hour)
-	apiAuthUCInstance := apiauth.NewUsecase(clientRepo, tierRepo, auditRepo, txManager, cfg)
+	apiKeyRing := apiauth.KeyRing{
+		CurrentKID:  cfg.JWTKeyRing.CurrentKID,
+		PrivateKeys: cfg.JWTKeyRing.PrivateKeys,
+	}
+	apiAuthUCInstance := apiauth.NewUsecase(clientRepo, tierRepo, auditRepo, txManager, apiKeyRing, cfg.APITokenTTL, cfg.ServiceName)
 
 	healthHandlers := transportHTTP.NewHealthHandlers(nil, nil, cfg)
 	ticketHandlers := v1.NewTicketHandlers(ticketRepo, cfg)
@@ -226,12 +230,14 @@ func TestE2E_FullFlow(t *testing.T) {
 	server := transportHTTP.NewServer(
 		healthHandlers,
 		&v1.AuthHandlers{},
+		nil,
 		ticketHandlers,
 		clientHandlers,
 		meHandlers,
 		nil,
 		sessionUCInstance,
 		limiter,
+		nil,
 		cfg,
 		log,
 	)

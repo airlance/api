@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "description": "Shared deterministic test vectors for wireauth v2 protocol across Go, TypeScript, and Swift",
+  "aes_gcm": [
+    {
+      "name": "valid_packet_sequence_1",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "sequence": 1,
+      "plaintext_utf8": "Hello FlatBuffers over Wireauth v2 Encrypted Channel!"
+    },
+    {
+      "name": "valid_packet_sequence_2",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "sequence": 2,
+      "plaintext_utf8": "Subsequent encrypted payload sequence test"
+    }
+  ],
+  "handshake_validation": {
+    "protocol_version": 2,
+    "cipher_suite": "AES_256_GCM_HKDF_SHA256",
+    "transcript_order": [
+      "client_hello_random",
+      "server_hello_random",
+      "client_public_key",
+      "server_public_key",
+      "server_signature"
+    ]
+  }
+}

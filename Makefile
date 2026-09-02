@@ -1,15 +1,15 @@
-APP_NAME=app
-CMD_DIR=./cmd/app
+APP_NAME=airlance-api
+CMD_DIR=./cmd/main
 BIN_DIR=./bin
 VERSION ?= dev
-COMMIT  ?= $(shell git rev-parse --short HEAD)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -s -w \
 	-X main.Version=$(VERSION) \
 	-X main.Commit=$(COMMIT) \
 	-X main.BuildDate=$(BUILD_DATE)
 
-.PHONY: help version run fmt vet lint tidy migrate-up migrate-down migrate-create up zip keygen down
+.PHONY: help version run fmt vet lint tidy test migrate-up migrate-down migrate-create cleanup up down zip
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-25s %s\n", $$1, $$2}'
@@ -63,8 +63,8 @@ migrate-down: ## Rollback one migration
 migrate-create: ## Create migration
 	go run $(CMD_DIR) migrate create $(name)
 
-keygen: ## Generate keys for development
-	go run $(CMD_DIR) keygen --key-id=v1
+cleanup: ## Purge expired sessions and challenges
+	go run $(CMD_DIR) cleanup
 
 zip: ## Archive project
 	COPYFILE_DISABLE=1 zip -r api.zip . -x ".git/*" ".idea/*" ".env" ".env.example" ".gitignore" "app" "internal/protocol/generated/*" "Makefile" "*.DS_Store" "*/.DS_Store" "__MACOSX/*" "docker-compose.yml" "Dockerfile"

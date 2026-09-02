@@ -2,6 +2,7 @@
 package webauthn
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,10 +23,13 @@ var (
 	ErrNilWebAuthn = errors.New("webauthn: uninitialized engine")
 )
 
-// Engine wraps go-webauthn.WebAuthn.
+// Engine wraps go-webauthn.WebAuthn and implements passkey.WebAuthnService.
 type Engine struct {
 	w *gowebauthn.WebAuthn
 }
+
+// Ensure Engine implements passkey.WebAuthnService.
+var _ passkey.WebAuthnService = (*Engine)(nil)
 
 // NewEngine constructs a WebAuthn Engine from config.
 func NewEngine(cfg *config.Config) (*Engine, error) {
@@ -98,35 +102,84 @@ func (u *WebAuthnUser) WebAuthnIcon() string {
 	return ""
 }
 
-// BeginRegistration starts a WebAuthn credential registration ceremony.
-func (e *Engine) BeginRegistration(u *WebAuthnUser) (*protocol.CredentialCreation, *gowebauthn.SessionData, error) {
+// BeginRegistration implements passkey.WebAuthnService.
+func (e *Engine) BeginRegistration(u *user.User, existingCreds []*passkey.Credential) ([]byte, []byte, error) {
 	if e == nil || e.w == nil {
 		return nil, nil, ErrNilWebAuthn
 	}
+	wau := &WebAuthnUser{User: u, Credentials: existingCreds}
 	creation, sessionData, err := e.w.BeginRegistration(
-		u,
+		wau,
 		gowebauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("webauthn: begin registration failed: %w", err)
 	}
-	return creation, sessionData, nil
+
+	creationJSON, err := json.Marshal(creation)
+	if err != nil {
+		return nil, nil, fmt.Errorf("webauthn: marshal creation failed: %w", err)
+	}
+
+	sessionBytes, err := json.Marshal(sessionData)
+	if err != nil {
+		return nil, nil, fmt.Errorf("webauthn: marshal session data failed: %w", err)
+	}
+
+	return creationJSON, sessionBytes, nil
 }
 
-// FinishRegistration validates a registration response and returns the parsed credential.
-func (e *Engine) FinishRegistration(u *WebAuthnUser, sessionData gowebauthn.SessionData, r *http.Request) (*gowebauthn.Credential, error) {
+// FinishRegistration implements passkey.WebAuthnService.
+func (e *Engine) FinishRegistration(u *user.User, existingCreds []*passkey.Credential, sessionData []byte, responsePayload []byte) (*passkey.VerifiedCredential, error) {
 	if e == nil || e.w == nil {
 		return nil, ErrNilWebAuthn
 	}
-	cred, err := e.w.FinishRegistration(u, sessionData, r)
+	var sd gowebauthn.SessionData
+	if err := json.Unmarshal(sessionData, &sd); err != nil {
+		return nil, fmt.Errorf("webauthn: parse session data failed: %w", err)
+	}
+
+	wau := &WebAuthnUser{User: u, Credentials: existingCreds}
+	dummyReq, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(responsePayload))
+	if err != nil {
+		return nil, fmt.Errorf("webauthn: request adapter failed: %w", err)
+	}
+	dummyReq.Header.Set("Content-Type", "application/json")
+
+	cred, err := e.w.FinishRegistration(wau, sd, dummyReq)
 	if err != nil {
 		return nil, fmt.Errorf("webauthn: finish registration failed: %w", err)
 	}
-	return cred, nil
+
+	transports := make([]string, 0, len(cred.Transport))
+	for _, t := range cred.Transport {
+		transports = append(transports, string(t))
+	}
+
+	var aaguid *uuid.UUID
+	if len(cred.Authenticator.AAGUID) == 16 {
+		id, err := uuid.FromBytes(cred.Authenticator.AAGUID)
+		if err == nil {
+			aaguid = &id
+		}
+	}
+
+	var actualAAGUID uuid.UUID
+	if aaguid != nil {
+		actualAAGUID = *aaguid
+	}
+
+	return &passkey.VerifiedCredential{
+		CredentialID: cred.ID,
+		PublicKey:    cred.PublicKey,
+		SignCount:    cred.Authenticator.SignCount,
+		Transports:   transports,
+		AAGUID:       actualAAGUID,
+	}, nil
 }
 
-// BeginDiscoverableLogin starts a passwordless WebAuthn login ceremony without a pre-identified user.
-func (e *Engine) BeginDiscoverableLogin() (*protocol.CredentialAssertion, *gowebauthn.SessionData, error) {
+// BeginLogin implements passkey.WebAuthnService.
+func (e *Engine) BeginLogin() ([]byte, []byte, error) {
 	if e == nil || e.w == nil {
 		return nil, nil, ErrNilWebAuthn
 	}
@@ -136,47 +189,74 @@ func (e *Engine) BeginDiscoverableLogin() (*protocol.CredentialAssertion, *goweb
 	if err != nil {
 		return nil, nil, fmt.Errorf("webauthn: begin discoverable login failed: %w", err)
 	}
-	return assertion, sessionData, nil
+
+	assertionJSON, err := json.Marshal(assertion)
+	if err != nil {
+		return nil, nil, fmt.Errorf("webauthn: marshal assertion failed: %w", err)
+	}
+
+	sessionBytes, err := json.Marshal(sessionData)
+	if err != nil {
+		return nil, nil, fmt.Errorf("webauthn: marshal session data failed: %w", err)
+	}
+
+	return assertionJSON, sessionBytes, nil
 }
 
-// FinishDiscoverableLogin verifies a discoverable assertion response using a user finder callback.
-func (e *Engine) FinishDiscoverableLogin(
-	ctx context.Context,
-	sessionData gowebauthn.SessionData,
-	r *http.Request,
-	userHandler func(rawID, userHandle []byte) (gowebauthn.User, error),
-) (*gowebauthn.Credential, gowebauthn.User, error) {
+// FinishLogin implements passkey.WebAuthnService.
+func (e *Engine) FinishLogin(ctx context.Context, sessionData []byte, responsePayload []byte, lookup passkey.UserLookupFunc) (*passkey.VerifiedCredential, *user.User, error) {
 	if e == nil || e.w == nil {
 		return nil, nil, ErrNilWebAuthn
 	}
-	u, cred, err := e.w.FinishPasskeyLogin(userHandler, sessionData, r)
+	var sd gowebauthn.SessionData
+	if err := json.Unmarshal(sessionData, &sd); err != nil {
+		return nil, nil, fmt.Errorf("webauthn: parse session data failed: %w", err)
+	}
+
+	var resolvedUser *user.User
+	userHandler := func(rawID, userHandle []byte) (gowebauthn.User, error) {
+		u, creds, err := lookup(ctx, rawID, userHandle)
+		if err != nil {
+			return nil, err
+		}
+		resolvedUser = u
+		return &WebAuthnUser{User: u, Credentials: creds}, nil
+	}
+
+	dummyReq, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(responsePayload))
+	if err != nil {
+		return nil, nil, fmt.Errorf("webauthn: request adapter failed: %w", err)
+	}
+	dummyReq.Header.Set("Content-Type", "application/json")
+
+	gowebauthnUser, cred, err := e.w.FinishPasskeyLogin(userHandler, sd, dummyReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("webauthn: finish passkey login failed: %w", err)
 	}
-	return cred, u, nil
-}
 
-// ParseSessionData decodes JSON session data bytes.
-func ParseSessionData(data []byte) (*gowebauthn.SessionData, error) {
-	var sd gowebauthn.SessionData
-	if err := json.Unmarshal(data, &sd); err != nil {
-		return nil, fmt.Errorf("webauthn: unmarshal session data failed: %w", err)
-	}
-	return &sd, nil
-}
-
-// SerializeSessionData encodes session data to JSON bytes.
-func SerializeSessionData(sd *gowebauthn.SessionData) ([]byte, error) {
-	return json.Marshal(sd)
-}
-
-// AAGUIDFromBytes parses a 16-byte UUID from WebAuthn AAGUID.
-func AAGUIDFromBytes(b []byte) *uuid.UUID {
-	if len(b) == 16 {
-		id, err := uuid.FromBytes(b)
-		if err == nil {
-			return &id
+	if resolvedUser == nil && gowebauthnUser != nil {
+		if wau, ok := gowebauthnUser.(*WebAuthnUser); ok {
+			resolvedUser = wau.User
 		}
 	}
-	return nil
+
+	transports := make([]string, 0, len(cred.Transport))
+	for _, t := range cred.Transport {
+		transports = append(transports, string(t))
+	}
+
+	var actualAAGUID uuid.UUID
+	if len(cred.Authenticator.AAGUID) == 16 {
+		if id, err := uuid.FromBytes(cred.Authenticator.AAGUID); err == nil {
+			actualAAGUID = id
+		}
+	}
+
+	return &passkey.VerifiedCredential{
+		CredentialID: cred.ID,
+		PublicKey:    cred.PublicKey,
+		SignCount:    cred.Authenticator.SignCount,
+		Transports:   transports,
+		AAGUID:       actualAAGUID,
+	}, resolvedUser, nil
 }

@@ -74,8 +74,10 @@ func (a *App) Run() error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 
-	// 1. Drain and close active WebSocket sessions
-	a.Handlers.WSRegistry.CloseAll("server_shutdown")
+	// 1. Drain and close active WebSocket sessions gracefully
+	if a.Handlers.WSServer != nil {
+		_ = a.Handlers.WSServer.Shutdown(shutdownCtx)
+	}
 
 	// 2. Shutdown HTTP server
 	if err := a.HTTPServer.Shutdown(shutdownCtx); err != nil {

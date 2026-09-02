@@ -30,7 +30,7 @@ func (h *MeHandlers) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limits := middleware.APIClientLimitsProvider(r)
-	rateLimitsMap := make(map[string]any)
+	rateLimitsMap := make(map[string]RateLimitUsageDTO)
 
 	if h.limiter != nil && len(limits) > 0 {
 		usageKey := fmt.Sprintf("client:%s", clientID.String())
@@ -38,30 +38,30 @@ func (h *MeHandlers) GetMe(w http.ResponseWriter, r *http.Request) {
 		if err == nil && len(results) == len(limits) {
 			for i, lim := range limits {
 				res := results[i]
-				rateLimitsMap[lim.Name] = map[string]any{
-					"limit":      lim.Max,
-					"remaining":  res.Remaining,
-					"reset_at":   res.ResetAt.UTC().Format(time.RFC3339),
-					"window_sec": int(lim.Window.Seconds()),
+				rateLimitsMap[lim.Name] = RateLimitUsageDTO{
+					Limit:     lim.Max,
+					Remaining: res.Remaining,
+					ResetAt:   res.ResetAt.UTC().Format(time.RFC3339),
+					WindowSec: int(lim.Window.Seconds()),
 				}
 			}
 		}
 	}
 
 	if len(rateLimitsMap) == 0 {
-		rateLimitsMap["per_minute"] = map[string]any{
-			"limit":     claims.RequestsPerMinute,
-			"remaining": claims.RequestsPerMinute,
+		rateLimitsMap["per_minute"] = RateLimitUsageDTO{
+			Limit:     int64(claims.RequestsPerMinute),
+			Remaining: int64(claims.RequestsPerMinute),
 		}
-		rateLimitsMap["per_day"] = map[string]any{
-			"limit":     claims.RequestsPerDay,
-			"remaining": claims.RequestsPerDay,
+		rateLimitsMap["per_day"] = RateLimitUsageDTO{
+			Limit:     int64(claims.RequestsPerDay),
+			Remaining: int64(claims.RequestsPerDay),
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"user_id":     userID.String(),
-		"client_id":   clientID.String(),
-		"rate_limits": rateLimitsMap,
+	writeJSON(w, http.StatusOK, MeResponse{
+		UserID:     userID.String(),
+		ClientID:   clientID.String(),
+		RateLimits: rateLimitsMap,
 	})
 }

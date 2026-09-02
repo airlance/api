@@ -5,7 +5,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"os"
 	"testing"
 	"time"
 )
@@ -40,14 +39,9 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 }
 
 func TestLoadFromEnv_Custom(t *testing.T) {
-	os.Setenv("PORT", "9090")
-	os.Setenv("LOG_LEVEL", "debug")
-	os.Setenv("TRUSTED_PROXIES", "10.0.0.1,192.168.1.0/24")
-	defer func() {
-		os.Unsetenv("PORT")
-		os.Unsetenv("LOG_LEVEL")
-		os.Unsetenv("TRUSTED_PROXIES")
-	}()
+	t.Setenv("PORT", "9090")
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("TRUSTED_PROXIES", "10.0.0.1,192.168.1.0/24")
 
 	cfg, err := LoadFromEnv()
 	if err != nil {
@@ -66,10 +60,7 @@ func TestLoadFromEnv_Custom(t *testing.T) {
 }
 
 func TestLoadFromEnv_Production_FailClosedWithoutKeys(t *testing.T) {
-	os.Setenv("APP_ENV", "production")
-	defer func() {
-		os.Unsetenv("APP_ENV")
-	}()
+	t.Setenv("APP_ENV", "production")
 
 	_, err := LoadFromEnv()
 	if err == nil {
@@ -99,30 +90,20 @@ func TestLoadFromEnv_Production_RequiresTLSByDefault(t *testing.T) {
 func TestLoadFromEnv_Production_RequireTLS_ExplicitIngress(t *testing.T) {
 	rsaPEM := generateTestRSAPEM()
 
-	os.Setenv("APP_ENV", "production")
-	os.Setenv("DEVICE_HMAC_KEYS", "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
-	os.Setenv("AUDIT_HMAC_KEYS", "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
-	os.Setenv("JWT_CURRENT_KID", "k1")
-	os.Setenv("JWT_ED25519_KEYS", "k1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
-	os.Setenv("WIREAUTH_RSA_KEY_PEM", rsaPEM)
-	os.Setenv("REQUIRE_TLS", "true")
-	defer func() {
-		os.Unsetenv("APP_ENV")
-		os.Unsetenv("DEVICE_HMAC_KEYS")
-		os.Unsetenv("AUDIT_HMAC_KEYS")
-		os.Unsetenv("JWT_CURRENT_KID")
-		os.Unsetenv("JWT_ED25519_KEYS")
-		os.Unsetenv("WIREAUTH_RSA_KEY_PEM")
-		os.Unsetenv("REQUIRE_TLS")
-		os.Unsetenv("TLS_TERMINATION_INGRESS")
-	}()
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("DEVICE_HMAC_KEYS", "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("AUDIT_HMAC_KEYS", "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("JWT_CURRENT_KID", "k1")
+	t.Setenv("JWT_ED25519_KEYS", "k1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	t.Setenv("WIREAUTH_RSA_KEY_PEM", rsaPEM)
+	t.Setenv("REQUIRE_TLS", "true")
 
 	_, err := LoadFromEnv()
 	if err == nil {
 		t.Errorf("expected error in production when REQUIRE_TLS=true without explicit ingress mode")
 	}
 
-	os.Setenv("TLS_TERMINATION_INGRESS", "true")
+	t.Setenv("TLS_TERMINATION_INGRESS", "true")
 	cfg, err := LoadFromEnv()
 	if err != nil {
 		t.Fatalf("expected success with explicit TLS_TERMINATION_INGRESS=true, got %v", err)
@@ -130,13 +111,24 @@ func TestLoadFromEnv_Production_RequireTLS_ExplicitIngress(t *testing.T) {
 	if !cfg.TLSTerminationIngress {
 		t.Errorf("expected TLSTerminationIngress to be true")
 	}
+
+	t.Setenv("SMTP_ENABLED", "true")
+	t.Setenv("SMTP_HOST", "smtp.example.test")
+	t.Setenv("SMTP_PORT", "587")
+	t.Setenv("SMTP_FROM", "no-reply@example.test")
+	t.Setenv("SMTP_STARTTLS", "false")
+	if _, err := LoadFromEnv(); err == nil {
+		t.Fatal("expected production SMTP without STARTTLS to fail")
+	}
+
+	t.Setenv("SMTP_STARTTLS", "true")
+	if _, err := LoadFromEnv(); err != nil {
+		t.Fatalf("expected production SMTP with STARTTLS to load: %v", err)
+	}
 }
 
 func TestLoadFromEnv_ShortHMACKey_Fails(t *testing.T) {
-	os.Setenv("DEVICE_HMAC_KEYS", "1:too_short_key")
-	defer func() {
-		os.Unsetenv("DEVICE_HMAC_KEYS")
-	}()
+	t.Setenv("DEVICE_HMAC_KEYS", "1:too_short_key")
 
 	_, err := LoadFromEnv()
 	if err == nil {
@@ -145,12 +137,8 @@ func TestLoadFromEnv_ShortHMACKey_Fails(t *testing.T) {
 }
 
 func TestLoadFromEnv_KeyRotation_MultiKey(t *testing.T) {
-	os.Setenv("DEVICE_HMAC_KEYS", "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef,2:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210")
-	os.Setenv("DEVICE_HMAC_CURRENT_KEY_ID", "2")
-	defer func() {
-		os.Unsetenv("DEVICE_HMAC_KEYS")
-		os.Unsetenv("DEVICE_HMAC_CURRENT_KEY_ID")
-	}()
+	t.Setenv("DEVICE_HMAC_KEYS", "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef,2:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210")
+	t.Setenv("DEVICE_HMAC_CURRENT_KEY_ID", "2")
 
 	cfg, err := LoadFromEnv()
 	if err != nil {
@@ -162,5 +150,24 @@ func TestLoadFromEnv_KeyRotation_MultiKey(t *testing.T) {
 	}
 	if len(cfg.DeviceHMACKeyRing.Keys) != 2 {
 		t.Errorf("expected 2 keys in keyring, got %d", len(cfg.DeviceHMACKeyRing.Keys))
+	}
+}
+
+func TestLoadFromEnv_SMTPEnabledRequiresSafeConfiguration(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("SMTP_ENABLED", "true")
+	t.Setenv("SMTP_FROM", "no-reply@example.test")
+	t.Setenv("SMTP_HOST", "")
+
+	if _, err := LoadFromEnv(); err == nil {
+		t.Fatal("expected enabled SMTP without SMTP_HOST to fail")
+	}
+
+	t.Setenv("SMTP_HOST", "smtp.example.test")
+	t.Setenv("SMTP_PORT", "587")
+	t.Setenv("SMTP_USERNAME", "mailer")
+	t.Setenv("SMTP_PASSWORD", "")
+	if _, err := LoadFromEnv(); err == nil {
+		t.Fatal("expected SMTP credentials with missing password to fail")
 	}
 }

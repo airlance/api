@@ -59,7 +59,7 @@ func TestWebSocket_GracefulDrainingShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial failed: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Wait briefly for registration to settle
 	for i := 0; i < 20 && registry.Count() == 0; i++ {

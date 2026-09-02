@@ -11,6 +11,17 @@ import (
 	fbWS "airlance.org/api/internal/transport/ws/airlance/ws"
 )
 
+func buildTestRequestEnvelope(b *flatbuffers.Builder, protocol uint32, msgID uint64, payloadType fbWS.Payload, payloadOffset flatbuffers.UOffsetT) []byte {
+	fbWS.EnvelopeStart(b)
+	fbWS.EnvelopeAddProtocolVersion(b, protocol)
+	fbWS.EnvelopeAddMessageId(b, msgID)
+	fbWS.EnvelopeAddPayloadType(b, payloadType)
+	fbWS.EnvelopeAddPayload(b, payloadOffset)
+	envOffset := fbWS.EnvelopeEnd(b)
+	b.Finish(envOffset)
+	return b.FinishedBytes()
+}
+
 func TestRouter_PingPong(t *testing.T) {
 	router := NewRouter(1, 1)
 
@@ -19,15 +30,7 @@ func TestRouter_PingPong(t *testing.T) {
 	fbWS.PingAddTimestamp(b, uint64(time.Now().UnixMilli()))
 	pingOffset := fbWS.PingEnd(b)
 
-	fbWS.EnvelopeStart(b)
-	fbWS.EnvelopeAddProtocolVersion(b, 1)
-	fbWS.EnvelopeAddMessageId(b, 42)
-	fbWS.EnvelopeAddPayloadType(b, fbWS.PayloadPing)
-	fbWS.EnvelopeAddPayload(b, pingOffset)
-	envOffset := fbWS.EnvelopeEnd(b)
-	b.Finish(envOffset)
-
-	packet := b.FinishedBytes()
+	packet := buildTestRequestEnvelope(b, 1, 42, fbWS.PayloadPing, pingOffset)
 
 	s := &Session{
 		send:              make(chan []byte, 10),
@@ -52,15 +55,7 @@ func TestRouter_UnsupportedProtocol(t *testing.T) {
 	fbWS.EmptyStart(b)
 	emptyOffset := fbWS.EmptyEnd(b)
 
-	fbWS.EnvelopeStart(b)
-	fbWS.EnvelopeAddProtocolVersion(b, 1) // Client is on protocol 1
-	fbWS.EnvelopeAddMessageId(b, 1)
-	fbWS.EnvelopeAddPayloadType(b, fbWS.PayloadEmpty)
-	fbWS.EnvelopeAddPayload(b, emptyOffset)
-	envOffset := fbWS.EnvelopeEnd(b)
-	b.Finish(envOffset)
-
-	packet := b.FinishedBytes()
+	packet := buildTestRequestEnvelope(b, 1, 1, fbWS.PayloadEmpty, emptyOffset)
 
 	s := &Session{
 		send:              make(chan []byte, 10),

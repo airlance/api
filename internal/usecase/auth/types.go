@@ -6,17 +6,14 @@ import (
 
 	"github.com/google/uuid"
 
-	"airlance.org/api/internal/domain/passkey"
 	"airlance.org/api/internal/domain/session"
 	"airlance.org/api/internal/domain/user"
 )
 
 var (
-	ErrChallengeInvalid           = passkey.ErrChallengeNotFound
 	ErrCredentialForbidden        = errors.New("auth: credential does not belong to caller")
 	ErrCannotDeleteLastCredential = errors.New("auth: cannot remove last registered credential")
 	ErrDeviceForbidden            = errors.New("auth: device does not belong to caller")
-	ErrRateLimitExceeded          = errors.New("auth: rate limit exceeded")
 )
 
 type SignupOptionsResult struct {

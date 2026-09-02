@@ -71,7 +71,7 @@ func newMigrateUpCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer m.Close()
+			defer func() { _, _ = m.Close() }()
 
 			if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 				return fmt.Errorf("migration up failed: %w", err)
@@ -99,7 +99,7 @@ func newMigrateDownCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer m.Close()
+			defer func() { _, _ = m.Close() }()
 
 			if steps <= 0 {
 				steps = 1
@@ -137,7 +137,7 @@ func newMigrateResetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer m.Close()
+			defer func() { _, _ = m.Close() }()
 
 			if err := m.Drop(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 				return fmt.Errorf("migration drop failed: %w", err)
@@ -170,7 +170,7 @@ func newMigrateVersionCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer m.Close()
+			defer func() { _, _ = m.Close() }()
 
 			v, dirty, err := m.Version()
 			if err != nil {

@@ -16,7 +16,7 @@ func TestLocalEventBus_PubSub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to subscribe: %v", err)
 	}
-	defer sub.Close()
+	defer func() { _ = sub.Close() }()
 
 	ev := domainEB.Event{
 		Topic:     domainEB.TopicSessionRevoked,

@@ -77,7 +77,7 @@ func TestRedisEventBus_RealRedisTwoInstanceRevocations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial to Instance B failed: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	for i := 0; i < 20 && registryB.Count() == 0; i++ {
 		time.Sleep(10 * time.Millisecond)

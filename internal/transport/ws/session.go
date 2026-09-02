@@ -149,15 +149,9 @@ func (s *Session) readLoop() {
 
 		_ = s.conn.SetReadDeadline(time.Now().Add(idleTimeout))
 
-		plaintext, seq, err := wireauth.DecryptAESGCM(s.clientToServerKey, packet)
+		plaintext, err := s.decryptAndValidatePacket(packet)
 		if err != nil {
-			s.log.Warn("Decryption error", "err", err)
-			break
-		}
-
-		expectedSeq := atomic.AddUint64(&s.inSeq, 1)
-		if seq != expectedSeq {
-			s.log.Warn("Sequence mismatch or replay attack detected", "expected", expectedSeq, "actual", seq)
+			s.log.Warn("Frame processing failed", "err", err)
 			break
 		}
 
@@ -218,4 +212,27 @@ func (s *Session) Close(reason string) {
 			_ = s.conn.Close()
 		}
 	})
+}
+
+// ValidateSequence checks that the incoming sequence counter matches expectedSeq exactly.
+// Any replay or out-of-order sequence counter fails with ErrSequenceMismatch.
+func ValidateSequence(expectedSeq, actualSeq uint64) error {
+	if actualSeq != expectedSeq {
+		return ErrSequenceMismatch
+	}
+	return nil
+}
+
+func (s *Session) decryptAndValidatePacket(packet []byte) ([]byte, error) {
+	plaintext, seq, err := wireauth.DecryptAESGCM(s.clientToServerKey, packet)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt error: %w", err)
+	}
+
+	expectedSeq := atomic.AddUint64(&s.inSeq, 1)
+	if err := ValidateSequence(expectedSeq, seq); err != nil {
+		return nil, fmt.Errorf("%w: expected %d, actual %d", err, expectedSeq, seq)
+	}
+
+	return plaintext, nil
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"airlance.org/api/internal/config"
+	"airlance.org/api/internal/domain/ratelimit"
 	"airlance.org/api/internal/middleware"
 	"airlance.org/api/internal/usecase/auth"
 	sessionUC "airlance.org/api/internal/usecase/session"
@@ -32,7 +33,7 @@ func (h *AuthHandlers) PasskeySignupOptions(w http.ResponseWriter, r *http.Reque
 	ip := middleware.GetClientIP(r.Context())
 	opts, err := h.authUC.BeginSignup(r.Context(), ip)
 	if err != nil {
-		if errors.Is(err, auth.ErrRateLimitExceeded) {
+		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
@@ -71,7 +72,7 @@ func (h *AuthHandlers) PasskeySignupVerify(w http.ResponseWriter, r *http.Reques
 
 	res, err := h.authUC.FinishSignup(r.Context(), challengeID, payload, rawDeviceID, platform, appVer, ip, ua, reqID)
 	if err != nil {
-		if errors.Is(err, auth.ErrRateLimitExceeded) {
+		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
@@ -87,7 +88,7 @@ func (h *AuthHandlers) PasskeyLoginOptions(w http.ResponseWriter, r *http.Reques
 	ip := middleware.GetClientIP(r.Context())
 	opts, err := h.authUC.BeginLogin(r.Context(), ip)
 	if err != nil {
-		if errors.Is(err, auth.ErrRateLimitExceeded) {
+		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
@@ -126,7 +127,7 @@ func (h *AuthHandlers) PasskeyLoginVerify(w http.ResponseWriter, r *http.Request
 
 	res, err := h.authUC.FinishLogin(r.Context(), challengeID, payload, rawDeviceID, platform, appVer, ip, ua, reqID)
 	if err != nil {
-		if errors.Is(err, auth.ErrRateLimitExceeded) {
+		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
@@ -148,7 +149,7 @@ func (h *AuthHandlers) PasskeyRegisterOptions(w http.ResponseWriter, r *http.Req
 	ip := middleware.GetClientIP(r.Context())
 	opts, err := h.authUC.BeginRegisterCredential(r.Context(), userID, ip)
 	if err != nil {
-		if errors.Is(err, auth.ErrRateLimitExceeded) {
+		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
@@ -187,14 +188,14 @@ func (h *AuthHandlers) PasskeyRegisterVerify(w http.ResponseWriter, r *http.Requ
 
 	cred, err := h.authUC.FinishRegisterCredential(r.Context(), userID, challengeID, payload, ip, ua, reqID)
 	if err != nil {
-		if errors.Is(err, auth.ErrRateLimitExceeded) {
+		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
 		writeOperationError(w, r, http.StatusBadRequest, "REGISTRATION_FAILED", "Credential registration failed", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, cred)
+	writeJSON(w, http.StatusOK, ToCredentialResponse(cred))
 }
 
 func (h *AuthHandlers) DeletePasskeyCredential(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +222,7 @@ func (h *AuthHandlers) DeletePasskeyCredential(w http.ResponseWriter, r *http.Re
 	reqID := r.Header.Get("X-Request-ID")
 
 	if err := h.authUC.DeleteCredential(r.Context(), userID, credID, ip, ua, reqID); err != nil {
-		if errors.Is(err, auth.ErrRateLimitExceeded) {
+		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
 			return
 		}
@@ -229,7 +230,10 @@ func (h *AuthHandlers) DeletePasskeyCredential(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "credential_id": credID.String()})
+	writeJSON(w, http.StatusOK, DeleteCredentialResponse{
+		Status:       "deleted",
+		CredentialID: credID.String(),
+	})
 }
 
 func (h *AuthHandlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
@@ -266,7 +270,7 @@ func (h *AuthHandlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+	writeJSON(w, http.StatusOK, StatusResponse{Status: "revoked"})
 }
 
 func (h *AuthHandlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
@@ -293,7 +297,7 @@ func (h *AuthHandlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request)
 		HttpOnly: true,
 	})
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "all_sessions_revoked"})
+	writeJSON(w, http.StatusOK, StatusResponse{Status: "all_sessions_revoked"})
 }
 
 func (h *AuthHandlers) applySessionCookie(w http.ResponseWriter, r *http.Request, token string) {

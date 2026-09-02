@@ -11,7 +11,9 @@ airlance-api
 # Test/coverage artifacts
 coverage.out
 coverage.html
+.gocache/
 
-# Editor/IDE
+# OS / Editor / IDE
+.DS_Store
 .idea/
 .vscode/

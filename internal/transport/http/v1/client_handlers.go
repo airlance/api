@@ -47,7 +47,10 @@ func (h *ClientHandlers) CreateClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, res)
+	writeJSON(w, http.StatusCreated, CreateClientResponse{
+		Client: ToClientResponse(res.Client),
+		Secret: res.Secret,
+	})
 }
 
 func (h *ClientHandlers) ListClients(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +66,7 @@ func (h *ClientHandlers) ListClients(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"clients": clients})
+	writeJSON(w, http.StatusOK, ToClientListResponse(clients))
 }
 
 func (h *ClientHandlers) RevokeClient(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +96,10 @@ func (h *ClientHandlers) RevokeClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"status": "revoked", "client_id": clientID.String()})
+	writeJSON(w, http.StatusOK, RevokeClientResponse{
+		Status:   "revoked",
+		ClientID: clientID.String(),
+	})
 }
 
 type issueTokenRequest struct {
@@ -120,10 +126,10 @@ func (h *ClientHandlers) IssueToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token": tokenStr,
-		"token_type":   "Bearer",
-		"expires_at":   exp.UTC().Format(time.RFC3339),
-		"expires_in":   int(time.Until(exp).Seconds()),
+	writeJSON(w, http.StatusOK, TokenResponse{
+		AccessToken: tokenStr,
+		TokenType:   "Bearer",
+		ExpiresAt:   exp.UTC().Format(time.RFC3339),
+		ExpiresIn:   int(time.Until(exp).Seconds()),
 	})
 }

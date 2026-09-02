@@ -113,7 +113,7 @@ func TestWSS_SuccessfulHandshakeOverTLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WSS dial failed: err=%v, resp=%v", err, resp)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// 3. Construct and send encrypted Ping message over WSS
 	b := flatbuffers.NewBuilder(128)

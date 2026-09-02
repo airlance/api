@@ -29,8 +29,8 @@ cleanup: ## Purge expired challenges/sessions (pass ARGS="--max-age 24h")
 ## --- Local infrastructure ----------------------------------------------
 
 .PHONY: dev-up
-dev-up: ## Start local Postgres and Redis via docker compose
-	docker compose up -d postgres redis
+dev-up: ## Start local Postgres, Redis, and Mailpit via docker compose
+	docker compose up -d postgres redis mailpit
 
 .PHONY: dev-down
 dev-down: ## Stop local docker compose services
@@ -83,7 +83,7 @@ test: ## go test ./...
 
 .PHONY: lint
 lint: ## golangci-lint run (requires golangci-lint on PATH)
-	golangci-lint run
+	GOCACHE=$(GOCACHE_DIR) golangci-lint run ./...
 
 .PHONY: check
 check: fmt vet lint test ## Run the full local check suite before handoff

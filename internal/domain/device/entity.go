@@ -9,7 +9,6 @@ import (
 
 var (
 	ErrNotFound = errors.New("device: not found")
-	ErrRevoked  = errors.New("device: revoked")
 )
 
 type Device struct {

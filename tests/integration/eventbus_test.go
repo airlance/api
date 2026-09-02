@@ -20,7 +20,7 @@ func TestEventBus_CrossInstanceRevocationSimulation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to subscribe: %v", err)
 	}
-	defer subB.Close()
+	defer func() { _ = subB.Close() }()
 
 	revokedSessionID := uuid.New()
 	err = bus.Publish(ctx, domainEB.TopicSessionRevoked, domainEB.Event{

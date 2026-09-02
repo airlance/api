@@ -13,11 +13,13 @@ import (
 
 	"airlance.org/api/internal/config"
 	domainEB "airlance.org/api/internal/domain/eventbus"
+	domainMailer "airlance.org/api/internal/domain/mailer"
 	domainRL "airlance.org/api/internal/domain/ratelimit"
 	"airlance.org/api/internal/domain/tx"
 	"airlance.org/api/internal/infrastructure/database"
 	"airlance.org/api/internal/infrastructure/eventbus"
 	"airlance.org/api/internal/infrastructure/logger"
+	infraMailer "airlance.org/api/internal/infrastructure/mailer"
 	"airlance.org/api/internal/infrastructure/metrics"
 	"airlance.org/api/internal/infrastructure/ratelimit"
 	"airlance.org/api/internal/infrastructure/webauthn"
@@ -33,6 +35,7 @@ type Infrastructures struct {
 	Limiter        domainRL.Limiter
 	WireauthServer *wireauth.Server
 	Metrics        *metrics.Registry
+	Mailer         domainMailer.Sender
 }
 
 func InitInfrastructures(ctx context.Context, cfg *config.Config) (*Infrastructures, error) {
@@ -87,6 +90,15 @@ func InitInfrastructures(ctx context.Context, cfg *config.Config) (*Infrastructu
 	eventBusInstance := eventbus.NewRedisEventBus(redisClient)
 	limiter := ratelimit.NewRedisLimiter(redisClient)
 	metricsReg := metrics.NewRegistry()
+	var mailer domainMailer.Sender
+	if cfg.SMTPEnabled {
+		mailer, err = infraMailer.NewSMTPClient(cfg)
+		if err != nil {
+			dbPool.Close()
+			_ = redisClient.Close()
+			return nil, fmt.Errorf("bootstrap: SMTP mailer init failed: %w", err)
+		}
+	}
 
 	return &Infrastructures{
 		DBPool:         dbPool,
@@ -98,6 +110,7 @@ func InitInfrastructures(ctx context.Context, cfg *config.Config) (*Infrastructu
 		Limiter:        limiter,
 		WireauthServer: wireauthServer,
 		Metrics:        metricsReg,
+		Mailer:         mailer,
 	}, nil
 }
 

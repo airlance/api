@@ -32,10 +32,6 @@ func HashToken(token string) []byte {
 	return h[:]
 }
 
-func HashTokenHex(token string) string {
-	return hex.EncodeToString(HashToken(token))
-}
-
 func ComputeHMAC(data, key []byte) []byte {
 	mac := hmac.New(sha256.New, key)
 	mac.Write(data)

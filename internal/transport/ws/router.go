@@ -77,16 +77,7 @@ func (r *Router) handlePing(ctx context.Context, s *Session, env *fbWS.Envelope)
 	fbWS.PongAddTimestamp(b, uint64(time.Now().UnixMilli()))
 	pongOffset := fbWS.PongEnd(b)
 
-	fbWS.EnvelopeStart(b)
-	fbWS.EnvelopeAddProtocolVersion(b, r.currentProtocol)
-	fbWS.EnvelopeAddMessageId(b, s.NextMessageID())
-	fbWS.EnvelopeAddCorrelationId(b, env.MessageId())
-	fbWS.EnvelopeAddPayloadType(b, fbWS.PayloadPong)
-	fbWS.EnvelopeAddPayload(b, pongOffset)
-	envOffset := fbWS.EnvelopeEnd(b)
-
-	b.Finish(envOffset)
-	return s.Send(b.FinishedBytes())
+	return s.Send(buildResponseEnvelope(b, r.currentProtocol, s.NextMessageID(), env.MessageId(), fbWS.PayloadPong, pongOffset))
 }
 
 func (r *Router) handleTestEcho(ctx context.Context, s *Session, env *fbWS.Envelope) error {
@@ -104,16 +95,7 @@ func (r *Router) handleTestEcho(ctx context.Context, s *Session, env *fbWS.Envel
 	fbWS.TestEchoAddData(b, dataOffset)
 	echoOffset := fbWS.TestEchoEnd(b)
 
-	fbWS.EnvelopeStart(b)
-	fbWS.EnvelopeAddProtocolVersion(b, r.currentProtocol)
-	fbWS.EnvelopeAddMessageId(b, s.NextMessageID())
-	fbWS.EnvelopeAddCorrelationId(b, env.MessageId())
-	fbWS.EnvelopeAddPayloadType(b, fbWS.PayloadTestEcho)
-	fbWS.EnvelopeAddPayload(b, echoOffset)
-	envOffset := fbWS.EnvelopeEnd(b)
-
-	b.Finish(envOffset)
-	return s.Send(b.FinishedBytes())
+	return s.Send(buildResponseEnvelope(b, r.currentProtocol, s.NextMessageID(), env.MessageId(), fbWS.PayloadTestEcho, echoOffset))
 }
 
 func BuildErrorEnvelope(currentProtocol uint32, msgID, corrID uint64, code fbWS.ErrorCode, msg string, retryable bool, retryAfterMs uint32) []byte {
@@ -127,12 +109,16 @@ func BuildErrorEnvelope(currentProtocol uint32, msgID, corrID uint64, code fbWS.
 	fbWS.ErrorAddRetryAfterMs(b, retryAfterMs)
 	errOffset := fbWS.ErrorEnd(b)
 
+	return buildResponseEnvelope(b, currentProtocol, msgID, corrID, fbWS.PayloadError, errOffset)
+}
+
+func buildResponseEnvelope(b *flatbuffers.Builder, protocol uint32, msgID, corrID uint64, payloadType fbWS.Payload, payloadOffset flatbuffers.UOffsetT) []byte {
 	fbWS.EnvelopeStart(b)
-	fbWS.EnvelopeAddProtocolVersion(b, currentProtocol)
+	fbWS.EnvelopeAddProtocolVersion(b, protocol)
 	fbWS.EnvelopeAddMessageId(b, msgID)
 	fbWS.EnvelopeAddCorrelationId(b, corrID)
-	fbWS.EnvelopeAddPayloadType(b, fbWS.PayloadError)
-	fbWS.EnvelopeAddPayload(b, errOffset)
+	fbWS.EnvelopeAddPayloadType(b, payloadType)
+	fbWS.EnvelopeAddPayload(b, payloadOffset)
 	envOffset := fbWS.EnvelopeEnd(b)
 
 	b.Finish(envOffset)

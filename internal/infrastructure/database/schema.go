@@ -19,7 +19,7 @@ func GetCurrentSchemaVersion(dsn, dir string) (uint, bool, error) {
 	if err != nil {
 		return 0, false, err
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 
 	v, dirty, err := m.Version()
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/mail"
 	"os"
 	"strconv"
 	"strings"
@@ -44,6 +45,14 @@ type Config struct {
 	MaxSchemaVersion        uint
 	LogLevel                string
 	LogFormat               string
+	SMTPEnabled             bool
+	SMTPHost                string
+	SMTPPort                int
+	SMTPUsername            string
+	SMTPPassword            string
+	SMTPFrom                string
+	SMTPStartTLS            bool
+	SMTPTimeout             time.Duration
 	TrustedProxies          []*net.IPNet
 	MetricsAllowedCIDRs     []*net.IPNet
 	WebAuthnRPID            string
@@ -93,6 +102,14 @@ func LoadFromEnv() (*Config, error) {
 		MaxSchemaVersion:        uint(getEnvInt("MAX_SCHEMA_VERSION", 100)),
 		LogLevel:                getEnv("LOG_LEVEL", "info"),
 		LogFormat:               getEnv("LOG_FORMAT", "json"),
+		SMTPEnabled:             getEnvBool("SMTP_ENABLED", false),
+		SMTPHost:                getEnv("SMTP_HOST", ""),
+		SMTPPort:                getEnvInt("SMTP_PORT", 587),
+		SMTPUsername:            getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:            getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:                getEnv("SMTP_FROM", ""),
+		SMTPStartTLS:            getEnvBool("SMTP_STARTTLS", !isDevOrTest),
+		SMTPTimeout:             getEnvDuration("SMTP_TIMEOUT", 10*time.Second),
 		WebAuthnRPID:            getEnv("WEBAUTHN_RP_ID", "localhost"),
 		WebAuthnRPDisplayName:   getEnv("WEBAUTHN_RP_DISPLAY_NAME", "Airlance"),
 		WebAuthnRPOrigins:       getEnvSlice("WEBAUTHN_RP_ORIGINS", []string{"http://localhost:3000", "http://localhost:8080", "https://localhost:3000", "https://localhost:8080"}),
@@ -199,6 +216,28 @@ func LoadFromEnv() (*Config, error) {
 					return nil, fmt.Errorf("%w: wildcard origins are not allowed outside development", ErrInvalidConfig)
 				}
 			}
+		}
+	}
+
+	if cfg.SMTPEnabled {
+		if strings.TrimSpace(cfg.SMTPHost) == "" {
+			return nil, fmt.Errorf("%w: SMTP_HOST is required when SMTP_ENABLED=true", ErrInvalidConfig)
+		}
+		if cfg.SMTPPort < 1 || cfg.SMTPPort > 65535 {
+			return nil, fmt.Errorf("%w: SMTP_PORT must be between 1 and 65535", ErrInvalidConfig)
+		}
+		from, err := mail.ParseAddress(cfg.SMTPFrom)
+		if err != nil || from.Address != cfg.SMTPFrom {
+			return nil, fmt.Errorf("%w: SMTP_FROM must be a valid email address", ErrInvalidConfig)
+		}
+		if (cfg.SMTPUsername == "") != (cfg.SMTPPassword == "") {
+			return nil, fmt.Errorf("%w: SMTP_USERNAME and SMTP_PASSWORD must be set together", ErrInvalidConfig)
+		}
+		if !isDevOrTest && !cfg.SMTPStartTLS {
+			return nil, fmt.Errorf("%w: SMTP_STARTTLS must be true outside development/test", ErrInvalidConfig)
+		}
+		if cfg.SMTPTimeout <= 0 {
+			return nil, fmt.Errorf("%w: SMTP_TIMEOUT must be positive", ErrInvalidConfig)
 		}
 	}
 

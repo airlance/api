@@ -58,11 +58,17 @@ The shortest local setup, using the `Makefile`:
 
 ```bash
 cp .env.example .env
-make dev-up                    # start local Postgres and Redis
+make dev-up                    # start local Postgres, Redis, and Mailpit
 set -a && source .env && set +a
 make migrate-up
 make run
 ```
+
+Mailpit captures development email locally; its inbox UI is available at
+<http://localhost:8025>. It is never a production dependency. SMTP delivery is
+disabled by default (`SMTP_ENABLED=false`); production SMTP requires a valid
+`SMTP_FROM`, an explicit host/port, and STARTTLS. See `.env.example` for the
+complete SMTP configuration.
 
 `.env` is a local shell convenience file, not an application configuration
 source: the process reads environment variables directly, so `.env` must be

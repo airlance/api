@@ -29,6 +29,13 @@ services:
       timeout: 5s
       retries: 5
 
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: airlance-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   api:
     build:
       context: .
@@ -39,11 +46,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     environment:
       APP_ENV: development
       PORT: 8080
       DATABASE_URL: postgres://postgres:password@postgres:5432/airlance?sslmode=disable
       REDIS_URL: redis://redis:6379/0
+      SMTP_ENABLED: "true"
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_FROM: no-reply@airlance.local
+      SMTP_STARTTLS: "false"
       LOG_LEVEL: debug
       LOG_FORMAT: console
     ports:

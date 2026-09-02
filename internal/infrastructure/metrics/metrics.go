@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -89,30 +90,38 @@ func (r *Registry) Handler() http.Handler {
 		r.mu.RLock()
 		defer r.mu.RUnlock()
 
-		fmt.Fprintln(w, "# HELP http_requests_total Total number of HTTP requests processed")
-		fmt.Fprintln(w, "# TYPE http_requests_total counter")
+		writeLine(w, "# HELP http_requests_total Total number of HTTP requests processed")
+		writeLine(w, "# TYPE http_requests_total counter")
 		for labels, countPtr := range r.httpRequestsTotal {
-			fmt.Fprintf(w, "http_requests_total{%s} %d\n", labels, atomic.LoadUint64(countPtr))
+			writef(w, "http_requests_total{%s} %d\n", labels, atomic.LoadUint64(countPtr))
 		}
 
-		fmt.Fprintln(w, "# HELP auth_events_total Total authentication ceremonies outcome")
-		fmt.Fprintln(w, "# TYPE auth_events_total counter")
+		writeLine(w, "# HELP auth_events_total Total authentication ceremonies outcome")
+		writeLine(w, "# TYPE auth_events_total counter")
 		for labels, countPtr := range r.authEventsTotal {
-			fmt.Fprintf(w, "auth_events_total{%s} %d\n", labels, atomic.LoadUint64(countPtr))
+			writef(w, "auth_events_total{%s} %d\n", labels, atomic.LoadUint64(countPtr))
 		}
 
-		fmt.Fprintln(w, "# HELP ratelimit_rejections_total Total rate limit rejections")
-		fmt.Fprintln(w, "# TYPE ratelimit_rejections_total counter")
+		writeLine(w, "# HELP ratelimit_rejections_total Total rate limit rejections")
+		writeLine(w, "# TYPE ratelimit_rejections_total counter")
 		for labels, countPtr := range r.rateLimitHitsTotal {
-			fmt.Fprintf(w, "ratelimit_rejections_total{%s} %d\n", labels, atomic.LoadUint64(countPtr))
+			writef(w, "ratelimit_rejections_total{%s} %d\n", labels, atomic.LoadUint64(countPtr))
 		}
 
-		fmt.Fprintln(w, "# HELP ws_active_connections Current active WebSocket connections")
-		fmt.Fprintln(w, "# TYPE ws_active_connections gauge")
-		fmt.Fprintf(w, "ws_active_connections %d\n", atomic.LoadInt64(&r.wsActiveConnections))
+		writeLine(w, "# HELP ws_active_connections Current active WebSocket connections")
+		writeLine(w, "# TYPE ws_active_connections gauge")
+		writef(w, "ws_active_connections %d\n", atomic.LoadInt64(&r.wsActiveConnections))
 
-		fmt.Fprintln(w, "# HELP ws_handshake_errors_total Total failed WS handshakes")
-		fmt.Fprintln(w, "# TYPE ws_handshake_errors_total counter")
-		fmt.Fprintf(w, "ws_handshake_errors_total %d\n", atomic.LoadUint64(&r.wsHandshakeErrorsTotal))
+		writeLine(w, "# HELP ws_handshake_errors_total Total failed WS handshakes")
+		writeLine(w, "# TYPE ws_handshake_errors_total counter")
+		writef(w, "ws_handshake_errors_total %d\n", atomic.LoadUint64(&r.wsHandshakeErrorsTotal))
 	})
+}
+
+func writeLine(w io.Writer, s string) {
+	_, _ = fmt.Fprintln(w, s)
+}
+
+func writef(w io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(w, format, args...)
 }

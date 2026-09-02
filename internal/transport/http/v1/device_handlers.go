@@ -31,7 +31,7 @@ func (h *DeviceHandlers) ListDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"devices": devices})
+	writeJSON(w, http.StatusOK, ToDeviceListResponse(devices))
 }
 
 func (h *DeviceHandlers) RevokeDevice(w http.ResponseWriter, r *http.Request) {
@@ -62,8 +62,8 @@ func (h *DeviceHandlers) RevokeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":    "revoked",
-		"device_id": deviceID.String(),
+	writeJSON(w, http.StatusOK, RevokeDeviceResponse{
+		Status:   "revoked",
+		DeviceID: deviceID.String(),
 	})
 }

@@ -19,11 +19,11 @@ func (u *Usecase) checkChallengeRateLimit(ctx context.Context, key string) error
 	results, err := u.limiter.Allow(ctx, key, limits)
 	if err != nil {
 		// Fail-closed policy for authentication ceremonies
-		return fmt.Errorf("%w: limiter check failed: %v", ErrRateLimitExceeded, err)
+		return fmt.Errorf("%w: limiter check failed: %v", ratelimit.ErrRateLimitExceeded, err)
 	}
 	for _, res := range results {
 		if !res.Allowed {
-			return ErrRateLimitExceeded
+			return ratelimit.ErrRateLimitExceeded
 		}
 	}
 	return nil

@@ -49,9 +49,9 @@ func (h *TicketHandlers) IssueTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ticket":     ticketID,
-		"expires_at": ticket.ExpiresAt.UTC().Format(time.RFC3339),
-		"ttl_sec":    int(h.cfg.WSTicketTTL.Seconds()),
+	writeJSON(w, http.StatusOK, WSTicketResponse{
+		Ticket:    ticketID,
+		ExpiresAt: ticket.ExpiresAt.UTC().Format(time.RFC3339),
+		TTLSec:    int(h.cfg.WSTicketTTL.Seconds()),
 	})
 }

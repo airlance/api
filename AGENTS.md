@@ -1,139 +1,64 @@
-# AGENTS.md — Go backend (workspace/api)
+## General principles
 
-Карта архитектуры Go-бэкенда мессенджера. См. также корневой `../../AGENTS.md` для
-кросс-проектных инвариантов (общих с Swift-клиентом).
+- Keep clean-architecture boundaries explicit: domain and usecases must not
+  import transport, database, Redis, or framework packages.
+- Prefer small, named functions and explicit dependency wiring. Do not add a
+  DI framework, reflection-based container, or hidden global state.
+- Protocol, database, and public API changes must update their specification,
+  fixtures, and tests in the same change.
+- Do not edit generated code by hand. Change its schema/source and regenerate.
+- Never commit secrets, private keys, production tokens, or real personal
+  identifiers.
 
----
+## Go style
 
-## 1. Обзор
+- Format with `gofmt`; use standard Go naming and error-wrapping conventions.
+- Keep exported identifiers documented. Prefer typed/sentinel errors and
+  `errors.Is`/`errors.As` over matching error strings.
+- Pass `context.Context` as the first parameter for I/O and usecase methods;
+  propagate cancellation and deadlines to Postgres, Redis, and EventBus calls.
+- Make transaction boundaries explicit. Security mutations and their audit
+  records must use the same transaction where practical.
+- Avoid package-level mutable state. Inject dependencies through structs or
+  constructor arguments.
+- Unit tests live beside the package in `*_test.go`.
 
-- **Язык & Рантайм:** Go 1.22+
-- **Транспорт & Криптография:** TCP + length-prefix framing (4 байта big-endian),
-  Noise IK handshake (`Noise_IK_25519_ChaChaPoly_SHA256`)
-- **Wire-протокол:** FlatBuffers (`../../proto/schema.fbs`)
-- **Архитектурный паттерн:** Clean Architecture (Ports & Adapters)
-- **CLI фреймворк:** Cobra (`internal/transport/cli`)
-- **Хранилища:** PostgreSQL (постоянные данные), Redis (сессии/QR-логин/pub-sub)
+## Security and protocol code
 
----
+- TLS is mandatory for the WebSocket endpoint. Use wireauth v2 only; legacy
+  v1 is not permitted in the application.
+- Never log session tokens, API secrets, device IDs, passkeys, private keys,
+  raw identifiers, or decrypted payloads. Use keyed hashes for low-entropy
+  audit subjects and device identifiers.
+- Do not change protocol constants, HKDF labels, transcript field order,
+  sequence byte order, or frame lengths without updating all clients and the
+  shared contract fixtures.
+- Verify transcript signatures before deriving or using traffic keys. Maintain
+  independent directional keys and reject out-of-order or replayed frames.
+- Treat malformed input as a protocol error and close/reject promptly; do not
+  silently ignore attacker-controlled frames indefinitely.
 
-## 2. Карта слоёв (`internal/`)
+## Tests and fixtures
 
-```
-internal/
-├── domain/          ← Разбит по поддоменам. В каждом: entity.go + interfaces.go. НОЛЬ внешних зависимостей (только stdlib)!
-├── usecase/         ← Бизнес-логика. Зависит ТОЛЬКО от internal/domain/*.
-├── infrastructure/  ← Реализации портов: БД, email, Redis, серверные ключи, nodeid.
-└── transport/       ← CLI (cobra), TCP, framing, Noise IK, HTTP (OAuth), FlatBuffers. Вызывает usecase.
-```
+- Keep unit tests next to implementation code.
+- Put cross-package/process tests under `tests/integration`, `tests/e2e`, and
+  `tests/contract`; shared synthetic inputs belong in `tests/fixtures`.
+- Wireauth Go, TypeScript, and Swift implementations must consume the same
+  versioned protocol vectors. Fixtures must be deterministic and non-secret.
+- A bug fix requires a regression test at the lowest reproducing level;
+  security/protocol changes also require the relevant integration or contract
+  test.
+- Run `go test ./...` and `go vet ./...` for Go changes.
 
-Правило зависимостей: `transport → usecase → domain ← infrastructure`.
+## Database and migrations
 
-### Поддомены (`internal/domain/<context>/`)
+- Migration files are append-only and numbered by the migration tool.
+- Use expand/contract for changes that overlap rolling deployments. Do not
+  drop or rename fields still read by an older supported binary.
+- Repository SQL must use parameterized queries; never concatenate user input.
 
-| Поддомен | Назначение |
-|---|---|
-| `account` | Сущность `Account`, `Repository`, `ConfirmationCodeRepository`, `EmailSender` |
-| `authidentity` | `AuthIdentity`, провайдеры (email, github), `Repository` |
-| `device` | `Device` (метаданные + fingerprint), `Repository`, `NewDeviceNotifier` |
-| `oauth` | `GithubUser`, порт `GithubClient` |
-| `qrlogin` | `Ticket`, статусы, PubSub-события, `Repository`, `EventPublisher` |
-| `session` | `Session`, `Repository` (управление сессиями и TTL) |
-| `message` | `Message`, `MessageState`, `Repository` |
-| `serverkey` | `Repository` (загрузка серверного X25519 keypair) |
-| `updatelog` | Update log / gap-recovery инварианты (MTProto-style seq counters) |
+## Change checklist
 
-### Usecase (`internal/usecase/`)
-
-| Файл | Назначение |
-|---|---|
-| `email_auth.go` | Passwordless email OTP: регистрация, отправка/подтверждение кода |
-| `github_auth.go` | GitHub OAuth с auto-link по verified email |
-| `qrlogin.go` | QR-логин (WhatsApp Web / Telegram Desktop паттерн), Redis pub/sub push |
-| `session.go`, `session_management.go` | NewSession/ResumeSession, TTL, ротация |
-| `heartbeat.go` | Ping/Pong keepalive |
-| `message.go` | Отправка/доставка сообщений |
-| `device_upsert.go` | Регистрация/обновление устройства (fingerprint, метаданные) |
-| `updatelog.go` | GetDifference / DifferenceAck — gap recovery для клиентов |
-
-### Infrastructure (`internal/infrastructure/`)
-
-| Пакет | Назначение |
-|---|---|
-| `postgres` | Репозитории: `account_repo.go`, `auth_identity_repo.go`, `device_repo.go`, `session_repo.go`, `code_repo.go` |
-| `redis` | `qrlogin_repo.go` (тикеты), `qrlogin_pubsub.go` (cross-instance push) |
-| `redisclient` | Единая обёртка Redis-клиента |
-| `email` | `LogEmailSender` (OTP, для dev), `SMTPClient`/`SMTPNewDeviceNotifier` (прод) |
-| `oauth` | `GithubClient` поверх OAuth2 |
-| `serverkey` | `FileServerKeyRepository` — статический X25519 keypair сервера |
-| `nodeid` | Персистентный UUID узла (диск-кэш для local dev) |
-| `logger` | Structured logging (Logrus), `Init`/`ToContext`/`FromContext` |
-| `sessioncleanup` | Фоновый воркер очистки истёкших сессий по TTL |
-| `memory` | In-memory `SessionRepository` для тестов |
-
-### Transport (`internal/transport/`)
-
-| Пакет | Назначение |
-|---|---|
-| `framing.go` / `connection.go` / `listener.go` | Голый TCP: length-prefix framing, `Connection` (блокирующий API), accept loop |
-| `registry.go` | `ConnectionRegistry` |
-| `router.go` | `MessageRouter` — диспетчеризация application-фреймов в usecase |
-| `noiseik/` | `ServerHandshake`, `ClientHandshake`, `Conn` — зеркалит Swift-клиент 1:1 |
-| `http/` | Chi-сервер для GitHub OAuth redirect (`server.go`, `oauth_handler.go`) |
-| `cli/` | Cobra: `serve`, `keygen`, `migrate`, `version` |
-
-Прочее: `cmd/app/main.go` — единая точка входа, делегирует в `cli.Execute()`.
-`migrations/postgres/` — plain SQL (`.up.sql`/`.down.sql`).
-
----
-
-## 3. Ключевые инварианты
-
-1. **Доменные поддомены:** `entity.go` + `interfaces.go`, ноль внешних зависимостей.
-2. **Правило зависимостей:** `transport → usecase → domain ← infrastructure`. Никогда наоборот.
-3. **Единая точка входа:** `cmd/app/main.go` → `cli.Execute()`.
-4. **FlatBuffers `union Body` строго append-only** (см. корневой AGENTS.md и README.md
-   для полной таблицы индексов). Тест `TestUnionBodyIndicesAreStable` в
-   `internal/protocol/smoke_test.go` фиксирует текущие значения — если упал после
-   правки схемы, порядок нарушен.
-5. **`internal/protocol/generated/` — артефакт сборки, не коммитится.** Единственный
-   способ обновить: `make gen` (см. `.gitignore`). `make build`/`make test`/`make run`
-   зависят от `make gen` автоматически.
-6. **Noise handshake зеркалируется на Swift-клиенте.** Изменения в `internal/noiseik/`
-   требуют синхронного изменения в
-   `../macOS-swift/submodules/AirlanceClient/Sources/AirlanceClient/Noise/`.
-
----
-
-## 4. Команды сборки и тестирования
-
-```bash
-make gen     # Сгенерировать Go-код из ../../proto/schema.fbs (./scripts/gen-fbs.sh)
-make build   # gen + go build ./...
-make test    # gen + go test ./...
-make run     # gen + go run ./cmd/app serve
-```
-
-### GOPROXY (ограниченная сеть)
-
-Если `go mod tidy`/`go get` падает с `403 Forbidden: proxy.golang.org`:
-
-```bash
-GOPROXY=direct GOSUMDB=off go mod tidy
-```
-
-### Версия flatc
-
-Кодген зависит от версии `flatc` (в разработке — `2.0.8`). `brew install flatbuffers`
-может поставить более новую (24.x+) с другим кодгеном. Перед `make gen` сверь
-`flatc --version`; при расхождении зафиксируй `flatbuffers@2` или прогони `make gen` +
-`go test ./...` перед обновлением версии в README.
-
----
-
-## 5. Известные незакрытые вопросы (архитектурные, не баги)
-
-- **Graceful shutdown** `ListenAndServe` не реализован — блокируется до ошибки `Accept`.
-  Форма API нужна вместе с Connection ID registry / heartbeat manager.
-- **Паника внутри `Handler`** не перехватывается — уронит процесс. Решение (глушить
-  молча или пробрасывать) откладывается до Message Router.
+Before handoff, run the relevant formatter, tests, and static checks; update
+protocol/schema documentation when applicable; and report any checks that
+could not run and why.

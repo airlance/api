@@ -1,0 +1,54 @@
+// WebSocket Application Protocol Schema
+
+namespace airlance.ws;
+
+enum ErrorCode: ubyte {
+    INVALID_REQUEST = 0,
+    UNAUTHENTICATED = 1,
+    PERMISSION_DENIED = 2,
+    NOT_FOUND = 3,
+    CONFLICT = 4,
+    RATE_LIMITED = 5,
+    UNSUPPORTED_PROTOCOL = 6,
+    INTERNAL = 7,
+    SERVICE_UNAVAILABLE = 8
+}
+
+table Error {
+    code: ErrorCode;
+    message: string;
+    retryable: bool;
+    retry_after_ms: uint;
+}
+
+table Ping {
+    timestamp: ulong;
+}
+
+table Pong {
+    timestamp: ulong;
+}
+
+table Empty {}
+
+table TestEcho {
+    data: string;
+}
+
+union Payload {
+    Ping,
+    Pong,
+    Error,
+    Empty,
+    TestEcho
+}
+
+table Envelope {
+    protocol_version: uint;
+    client_version: uint;
+    message_id: ulong;
+    correlation_id: ulong;
+    payload: Payload;
+}
+
+root_type Envelope;

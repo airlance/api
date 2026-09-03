@@ -275,6 +275,16 @@ func (m *mockDeviceRepo) Touch(ctx context.Context, id uuid.UUID, appVersion *st
 	return nil
 }
 
+func (m *mockDeviceRepo) RebindUser(ctx context.Context, id uuid.UUID, userID uuid.UUID, appVersion *string, lastSeen time.Time) error {
+	if d, ok := m.devices[id]; ok {
+		d.UserID = userID
+		d.LastSeenAt = lastSeen
+		d.LastAppVersion = appVersion
+		d.RevokedAt = nil
+	}
+	return nil
+}
+
 func (m *mockDeviceRepo) UpdateHash(ctx context.Context, id uuid.UUID, newHash []byte) error {
 	if d, ok := m.devices[id]; ok {
 		d.DeviceIdentifierHash = newHash
@@ -467,6 +477,14 @@ func TestAuthUsecase_SignupAndLoginFlow(t *testing.T) {
 	}
 	if res.User == nil || res.Token == "" || !res.IsNewUser {
 		t.Fatalf("expected valid signup result")
+	}
+
+	creds, err := uc.ListCredentials(ctx, res.User.ID)
+	if err != nil {
+		t.Fatalf("unexpected ListCredentials error: %v", err)
+	}
+	if len(creds) != 1 {
+		t.Fatalf("expected 1 credential, got %d", len(creds))
 	}
 
 	// 3. Begin Login

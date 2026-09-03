@@ -49,7 +49,6 @@ func TestRedisEventBus_RealRedisTwoInstanceRevocations(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start Instance B eventbus listeners connected to Redis B
 	if err := serverB.StartEventBusListeners(ctx); err != nil {
 		t.Fatalf("failed to start event bus listeners: %v", err)
 	}

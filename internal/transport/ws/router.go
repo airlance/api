@@ -42,6 +42,15 @@ func NewRouter(minProtocol, currentProtocol uint32, authUC *auth.Usecase, sessio
 	r.Register(fbWS.PayloadOtpLinkEmailVerify, r.handleOTPLinkEmailVerify)
 	r.Register(fbWS.PayloadSessionListRequest, r.handleSessionList)
 	r.Register(fbWS.PayloadLogoutRequest, r.handleLogout)
+	r.Register(fbWS.PayloadUserProfileRequest, r.handleUserProfile)
+	r.Register(fbWS.PayloadSessionRevokeRequest, r.handleSessionRevoke)
+	r.Register(fbWS.PayloadSessionRevokeAllRequest, r.handleSessionRevokeAll)
+	r.Register(fbWS.PayloadDeviceListRequest, r.handleDeviceList)
+	r.Register(fbWS.PayloadDeviceRevokeRequest, r.handleDeviceRevoke)
+	r.Register(fbWS.PayloadPasskeyListRequest, r.handlePasskeyList)
+	r.Register(fbWS.PayloadPasskeyRegisterOptionsRequest, r.handlePasskeyRegisterOptions)
+	r.Register(fbWS.PayloadPasskeyRegisterVerifyRequest, r.handlePasskeyRegisterVerify)
+	r.Register(fbWS.PayloadPasskeyDeleteRequest, r.handlePasskeyDelete)
 
 	return r
 }

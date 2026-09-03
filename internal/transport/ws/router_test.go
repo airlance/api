@@ -12,7 +12,9 @@ import (
 
 	"airlance.org/api/internal/config"
 	"airlance.org/api/internal/domain/crypto"
+	"airlance.org/api/internal/domain/device"
 	"airlance.org/api/internal/domain/identity"
+	"airlance.org/api/internal/domain/passkey"
 	"airlance.org/api/internal/domain/session"
 	fbWS "airlance.org/api/internal/transport/ws/airlance/ws"
 )
@@ -398,5 +400,257 @@ func TestRouter_Logout(t *testing.T) {
 	}
 	if sess.RevokedAt == nil {
 		t.Errorf("expected session to be revoked in repository")
+	}
+}
+
+func TestRouter_UserProfile(t *testing.T) {
+	router, _, _, _, _, _, _, _ := buildTestRouter(t)
+
+	userID := uuid.New()
+	sessionID := uuid.New()
+	devID := uuid.New()
+
+	s, cancel := newTestSession(userID, sessionID)
+	defer cancel()
+	s.DeviceID = &devID
+
+	b := flatbuffers.NewBuilder(32)
+	fbWS.UserProfileRequestStart(b)
+	reqOff := fbWS.UserProfileRequestEnd(b)
+
+	packet := buildTestRequestEnvelope(b, 2, 401, fbWS.PayloadUserProfileRequest, reqOff)
+	if err := router.Dispatch(context.Background(), s, packet); err != nil {
+		t.Fatalf("dispatch error: %v", err)
+	}
+
+	env := decryptTestResponse(t, s)
+	if env.PayloadType() != fbWS.PayloadUserProfileResponse {
+		t.Fatalf("expected PayloadUserProfileResponse, got %v", env.PayloadType())
+	}
+
+	var resp fbWS.UserProfileResponse
+	table := new(flatbuffers.Table)
+	env.Payload(table)
+	resp.Init(table.Bytes, table.Pos)
+
+	if string(resp.UserId()) != userID.String() {
+		t.Errorf("expected user_id %s, got %s", userID.String(), string(resp.UserId()))
+	}
+	if string(resp.SessionId()) != sessionID.String() {
+		t.Errorf("expected session_id %s, got %s", sessionID.String(), string(resp.SessionId()))
+	}
+	if string(resp.DeviceId()) != devID.String() {
+		t.Errorf("expected device_id %s, got %s", devID.String(), string(resp.DeviceId()))
+	}
+}
+
+func TestRouter_SessionRevoke(t *testing.T) {
+	router, _, _, _, sessionRepo, _, _, _ := buildTestRouter(t)
+
+	userID := uuid.New()
+	currentSessionID := uuid.New()
+	otherSessionID := uuid.New()
+
+	now := time.Now()
+	_ = sessionRepo.Create(context.Background(), &session.Session{
+		ID:        currentSessionID,
+		UserID:    userID,
+		CreatedAt: now,
+		ExpiresAt: now.Add(24 * time.Hour),
+	})
+	_ = sessionRepo.Create(context.Background(), &session.Session{
+		ID:        otherSessionID,
+		UserID:    userID,
+		CreatedAt: now,
+		ExpiresAt: now.Add(24 * time.Hour),
+	})
+
+	s, cancel := newTestSession(userID, currentSessionID)
+	defer cancel()
+
+	b := flatbuffers.NewBuilder(64)
+	sidOff := b.CreateString(otherSessionID.String())
+	fbWS.SessionRevokeRequestStart(b)
+	fbWS.SessionRevokeRequestAddSessionId(b, sidOff)
+	reqOff := fbWS.SessionRevokeRequestEnd(b)
+
+	packet := buildTestRequestEnvelope(b, 2, 402, fbWS.PayloadSessionRevokeRequest, reqOff)
+	if err := router.Dispatch(context.Background(), s, packet); err != nil {
+		t.Fatalf("dispatch error: %v", err)
+	}
+
+	env := decryptTestResponse(t, s)
+	if env.PayloadType() != fbWS.PayloadSessionRevokeResponse {
+		t.Fatalf("expected PayloadSessionRevokeResponse, got %v", env.PayloadType())
+	}
+
+	var resp fbWS.SessionRevokeResponse
+	table := new(flatbuffers.Table)
+	env.Payload(table)
+	resp.Init(table.Bytes, table.Pos)
+
+	if string(resp.SessionId()) != otherSessionID.String() {
+		t.Errorf("expected session_id %s, got %s", otherSessionID.String(), string(resp.SessionId()))
+	}
+
+	// Current socket stays open because other session was revoked
+	if s.ctx.Err() != nil {
+		t.Errorf("expected current session to remain open")
+	}
+}
+
+func TestRouter_SessionRevokeAll(t *testing.T) {
+	router, _, _, _, sessionRepo, _, _, _ := buildTestRouter(t)
+
+	userID := uuid.New()
+	sessionID := uuid.New()
+
+	now := time.Now()
+	_ = sessionRepo.Create(context.Background(), &session.Session{
+		ID:        sessionID,
+		UserID:    userID,
+		CreatedAt: now,
+		ExpiresAt: now.Add(24 * time.Hour),
+	})
+
+	s, cancel := newTestSession(userID, sessionID)
+	defer cancel()
+
+	b := flatbuffers.NewBuilder(32)
+	fbWS.SessionRevokeAllRequestStart(b)
+	reqOff := fbWS.SessionRevokeAllRequestEnd(b)
+
+	packet := buildTestRequestEnvelope(b, 2, 403, fbWS.PayloadSessionRevokeAllRequest, reqOff)
+	if err := router.Dispatch(context.Background(), s, packet); err != nil {
+		t.Fatalf("dispatch error: %v", err)
+	}
+
+	env := decryptTestResponse(t, s)
+	if env.PayloadType() != fbWS.PayloadSessionRevokeAllResponse {
+		t.Fatalf("expected PayloadSessionRevokeAllResponse, got %v", env.PayloadType())
+	}
+
+	// Socket closed upon revoking all
+	if s.ctx.Err() == nil {
+		t.Errorf("expected session context to be cancelled upon revoke all")
+	}
+}
+
+func TestRouter_DeviceListAndRevoke(t *testing.T) {
+	h := buildTestRouterFull(t)
+
+	userID := uuid.New()
+	sessionID := uuid.New()
+	s, cancel := newTestSession(userID, sessionID)
+	defer cancel()
+
+	devID := uuid.New()
+	_ = h.deviceRepo.Create(context.Background(), &device.Device{
+		ID:         devID,
+		UserID:     userID,
+		Platform:   "web",
+		CreatedAt:  time.Now(),
+		LastSeenAt: time.Now(),
+	})
+
+	// 1. DeviceListRequest
+	b := flatbuffers.NewBuilder(32)
+	fbWS.DeviceListRequestStart(b)
+	reqOff := fbWS.DeviceListRequestEnd(b)
+
+	packet := buildTestRequestEnvelope(b, 2, 404, fbWS.PayloadDeviceListRequest, reqOff)
+	if err := h.router.Dispatch(context.Background(), s, packet); err != nil {
+		t.Fatalf("dispatch error: %v", err)
+	}
+
+	env := decryptTestResponse(t, s)
+	if env.PayloadType() != fbWS.PayloadDeviceListResponse {
+		t.Fatalf("expected PayloadDeviceListResponse, got %v", env.PayloadType())
+	}
+
+	// 2. DeviceRevokeRequest
+	b = flatbuffers.NewBuilder(64)
+	didOff := b.CreateString(devID.String())
+	fbWS.DeviceRevokeRequestStart(b)
+	fbWS.DeviceRevokeRequestAddDeviceId(b, didOff)
+	revokeReqOff := fbWS.DeviceRevokeRequestEnd(b)
+
+	packet = buildTestRequestEnvelope(b, 2, 405, fbWS.PayloadDeviceRevokeRequest, revokeReqOff)
+	if err := h.router.Dispatch(context.Background(), s, packet); err != nil {
+		t.Fatalf("dispatch error: %v", err)
+	}
+
+	env = decryptTestResponse(t, s)
+	if env.PayloadType() != fbWS.PayloadDeviceRevokeResponse {
+		t.Fatalf("expected PayloadDeviceRevokeResponse, got %v", env.PayloadType())
+	}
+}
+
+func TestRouter_PasskeyListAndDelete(t *testing.T) {
+	h := buildTestRouterFull(t)
+
+	userID := uuid.New()
+	sessionID := uuid.New()
+	s, cancel := newTestSession(userID, sessionID)
+	defer cancel()
+
+	identID := uuid.New()
+	_ = h.identRepo.Create(context.Background(), &identity.Identity{
+		ID:         identID,
+		UserID:     userID,
+		Kind:       identity.KindPasskey,
+		Identifier: "passkey-ident",
+		Verified:   true,
+		CreatedAt:  time.Now(),
+	})
+
+	credID := uuid.New()
+	cred2ID := uuid.New()
+	c1 := &passkey.Credential{
+		ID:         credID,
+		IdentityID: identID,
+		CreatedAt:  time.Now(),
+	}
+	c2 := &passkey.Credential{
+		ID:         cred2ID,
+		IdentityID: identID,
+		CreatedAt:  time.Now(),
+	}
+	_ = h.passkeyRepo.Create(context.Background(), c1)
+	_ = h.passkeyRepo.Create(context.Background(), c2)
+	h.passkeyRepo.userCreds = map[uuid.UUID][]*passkey.Credential{
+		userID: {c1, c2},
+	}
+
+	// 1. PasskeyListRequest
+	b := flatbuffers.NewBuilder(32)
+	fbWS.PasskeyListRequestStart(b)
+	reqOff := fbWS.PasskeyListRequestEnd(b)
+
+	packet := buildTestRequestEnvelope(b, 2, 406, fbWS.PayloadPasskeyListRequest, reqOff)
+	if err := h.router.Dispatch(context.Background(), s, packet); err != nil {
+		t.Fatalf("dispatch error: %v", err)
+	}
+
+	env := decryptTestResponse(t, s)
+	if env.PayloadType() != fbWS.PayloadPasskeyListResponse {
+		t.Fatalf("expected PayloadPasskeyListResponse, got %v", env.PayloadType())
+	}
+
+	// 2. PasskeyDeleteRequest
+	b = flatbuffers.NewBuilder(64)
+	cidOff := b.CreateString(credID.String())
+	fbWS.PasskeyDeleteRequestStart(b)
+	fbWS.PasskeyDeleteRequestAddId(b, cidOff)
+	delReqOff := fbWS.PasskeyDeleteRequestEnd(b)
+
+	packet = buildTestRequestEnvelope(b, 2, 407, fbWS.PayloadPasskeyDeleteRequest, delReqOff)
+	if err := h.router.Dispatch(context.Background(), s, packet); err != nil {
+		t.Fatalf("dispatch error: %v", err)
+	}
+
+	env = decryptTestResponse(t, s)
+	if env.PayloadType() != fbWS.PayloadPasskeyDeleteResponse {
+		t.Fatalf("expected PayloadPasskeyDeleteResponse, got %v", env.PayloadType())
 	}
 }

@@ -1,7 +1,10 @@
 package auth
 
 import (
+	"context"
 	"time"
+
+	"github.com/google/uuid"
 
 	"airlance.org/api/internal/domain/audit"
 	"airlance.org/api/internal/domain/crypto"
@@ -87,4 +90,8 @@ func NewUsecase(
 		otpTTL:            otpTTL,
 		otpMaxAttempts:    otpMaxAttempts,
 	}
+}
+
+func (u *Usecase) GetUser(ctx context.Context, userID uuid.UUID) (*user.User, error) {
+	return u.userRepo.GetByID(ctx, userID)
 }

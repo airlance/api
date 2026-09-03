@@ -74,6 +74,9 @@ func (m *mockDeviceRepo) GetByHash(ctx context.Context, hash []byte) (*device.De
 func (m *mockDeviceRepo) Touch(ctx context.Context, id uuid.UUID, appVer *string, lastSeen time.Time) error {
 	return nil
 }
+func (m *mockDeviceRepo) RebindUser(ctx context.Context, id uuid.UUID, userID uuid.UUID, appVer *string, lastSeen time.Time) error {
+	return nil
+}
 func (m *mockDeviceRepo) UpdateHash(ctx context.Context, id uuid.UUID, newHash []byte) error {
 	return nil
 }

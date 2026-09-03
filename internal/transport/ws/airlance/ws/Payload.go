@@ -7,54 +7,108 @@ import "strconv"
 type Payload byte
 
 const (
-	PayloadNONE                 Payload = 0
-	PayloadPing                 Payload = 1
-	PayloadPong                 Payload = 2
-	PayloadError                Payload = 3
-	PayloadEmpty                Payload = 4
-	PayloadTestEcho             Payload = 5
-	PayloadOtpLinkEmailRequest  Payload = 6
-	PayloadOtpLinkEmailAck      Payload = 7
-	PayloadOtpLinkEmailVerify   Payload = 8
-	PayloadOtpLinkEmailVerified Payload = 9
-	PayloadSessionListRequest   Payload = 10
-	PayloadSessionListResponse  Payload = 11
-	PayloadLogoutRequest        Payload = 12
-	PayloadLogoutResponse       Payload = 13
+	PayloadNONE                           Payload = 0
+	PayloadPing                           Payload = 1
+	PayloadPong                           Payload = 2
+	PayloadError                          Payload = 3
+	PayloadEmpty                          Payload = 4
+	PayloadTestEcho                       Payload = 5
+	PayloadOtpLinkEmailRequest            Payload = 6
+	PayloadOtpLinkEmailAck                Payload = 7
+	PayloadOtpLinkEmailVerify             Payload = 8
+	PayloadOtpLinkEmailVerified           Payload = 9
+	PayloadSessionListRequest             Payload = 10
+	PayloadSessionListResponse            Payload = 11
+	PayloadLogoutRequest                  Payload = 12
+	PayloadLogoutResponse                 Payload = 13
+	PayloadUserProfileRequest             Payload = 14
+	PayloadUserProfileResponse            Payload = 15
+	PayloadSessionRevokeRequest           Payload = 16
+	PayloadSessionRevokeResponse          Payload = 17
+	PayloadSessionRevokeAllRequest        Payload = 18
+	PayloadSessionRevokeAllResponse       Payload = 19
+	PayloadDeviceListRequest              Payload = 20
+	PayloadDeviceListResponse             Payload = 21
+	PayloadDeviceRevokeRequest            Payload = 22
+	PayloadDeviceRevokeResponse           Payload = 23
+	PayloadPasskeyListRequest             Payload = 24
+	PayloadPasskeyListResponse            Payload = 25
+	PayloadPasskeyRegisterOptionsRequest  Payload = 26
+	PayloadPasskeyRegisterOptionsResponse Payload = 27
+	PayloadPasskeyRegisterVerifyRequest   Payload = 28
+	PayloadPasskeyRegisterVerifyResponse  Payload = 29
+	PayloadPasskeyDeleteRequest           Payload = 30
+	PayloadPasskeyDeleteResponse          Payload = 31
 )
 
 var EnumNamesPayload = map[Payload]string{
-	PayloadNONE:                 "NONE",
-	PayloadPing:                 "Ping",
-	PayloadPong:                 "Pong",
-	PayloadError:                "Error",
-	PayloadEmpty:                "Empty",
-	PayloadTestEcho:             "TestEcho",
-	PayloadOtpLinkEmailRequest:  "OtpLinkEmailRequest",
-	PayloadOtpLinkEmailAck:      "OtpLinkEmailAck",
-	PayloadOtpLinkEmailVerify:   "OtpLinkEmailVerify",
-	PayloadOtpLinkEmailVerified: "OtpLinkEmailVerified",
-	PayloadSessionListRequest:   "SessionListRequest",
-	PayloadSessionListResponse:  "SessionListResponse",
-	PayloadLogoutRequest:        "LogoutRequest",
-	PayloadLogoutResponse:       "LogoutResponse",
+	PayloadNONE:                           "NONE",
+	PayloadPing:                           "Ping",
+	PayloadPong:                           "Pong",
+	PayloadError:                          "Error",
+	PayloadEmpty:                          "Empty",
+	PayloadTestEcho:                       "TestEcho",
+	PayloadOtpLinkEmailRequest:            "OtpLinkEmailRequest",
+	PayloadOtpLinkEmailAck:                "OtpLinkEmailAck",
+	PayloadOtpLinkEmailVerify:             "OtpLinkEmailVerify",
+	PayloadOtpLinkEmailVerified:           "OtpLinkEmailVerified",
+	PayloadSessionListRequest:             "SessionListRequest",
+	PayloadSessionListResponse:            "SessionListResponse",
+	PayloadLogoutRequest:                  "LogoutRequest",
+	PayloadLogoutResponse:                 "LogoutResponse",
+	PayloadUserProfileRequest:             "UserProfileRequest",
+	PayloadUserProfileResponse:            "UserProfileResponse",
+	PayloadSessionRevokeRequest:           "SessionRevokeRequest",
+	PayloadSessionRevokeResponse:          "SessionRevokeResponse",
+	PayloadSessionRevokeAllRequest:        "SessionRevokeAllRequest",
+	PayloadSessionRevokeAllResponse:       "SessionRevokeAllResponse",
+	PayloadDeviceListRequest:              "DeviceListRequest",
+	PayloadDeviceListResponse:             "DeviceListResponse",
+	PayloadDeviceRevokeRequest:            "DeviceRevokeRequest",
+	PayloadDeviceRevokeResponse:           "DeviceRevokeResponse",
+	PayloadPasskeyListRequest:             "PasskeyListRequest",
+	PayloadPasskeyListResponse:            "PasskeyListResponse",
+	PayloadPasskeyRegisterOptionsRequest:  "PasskeyRegisterOptionsRequest",
+	PayloadPasskeyRegisterOptionsResponse: "PasskeyRegisterOptionsResponse",
+	PayloadPasskeyRegisterVerifyRequest:   "PasskeyRegisterVerifyRequest",
+	PayloadPasskeyRegisterVerifyResponse:  "PasskeyRegisterVerifyResponse",
+	PayloadPasskeyDeleteRequest:           "PasskeyDeleteRequest",
+	PayloadPasskeyDeleteResponse:          "PasskeyDeleteResponse",
 }
 
 var EnumValuesPayload = map[string]Payload{
-	"NONE":                 PayloadNONE,
-	"Ping":                 PayloadPing,
-	"Pong":                 PayloadPong,
-	"Error":                PayloadError,
-	"Empty":                PayloadEmpty,
-	"TestEcho":             PayloadTestEcho,
-	"OtpLinkEmailRequest":  PayloadOtpLinkEmailRequest,
-	"OtpLinkEmailAck":      PayloadOtpLinkEmailAck,
-	"OtpLinkEmailVerify":   PayloadOtpLinkEmailVerify,
-	"OtpLinkEmailVerified": PayloadOtpLinkEmailVerified,
-	"SessionListRequest":   PayloadSessionListRequest,
-	"SessionListResponse":  PayloadSessionListResponse,
-	"LogoutRequest":        PayloadLogoutRequest,
-	"LogoutResponse":       PayloadLogoutResponse,
+	"NONE":                           PayloadNONE,
+	"Ping":                           PayloadPing,
+	"Pong":                           PayloadPong,
+	"Error":                          PayloadError,
+	"Empty":                          PayloadEmpty,
+	"TestEcho":                       PayloadTestEcho,
+	"OtpLinkEmailRequest":            PayloadOtpLinkEmailRequest,
+	"OtpLinkEmailAck":                PayloadOtpLinkEmailAck,
+	"OtpLinkEmailVerify":             PayloadOtpLinkEmailVerify,
+	"OtpLinkEmailVerified":           PayloadOtpLinkEmailVerified,
+	"SessionListRequest":             PayloadSessionListRequest,
+	"SessionListResponse":            PayloadSessionListResponse,
+	"LogoutRequest":                  PayloadLogoutRequest,
+	"LogoutResponse":                 PayloadLogoutResponse,
+	"UserProfileRequest":             PayloadUserProfileRequest,
+	"UserProfileResponse":            PayloadUserProfileResponse,
+	"SessionRevokeRequest":           PayloadSessionRevokeRequest,
+	"SessionRevokeResponse":          PayloadSessionRevokeResponse,
+	"SessionRevokeAllRequest":        PayloadSessionRevokeAllRequest,
+	"SessionRevokeAllResponse":       PayloadSessionRevokeAllResponse,
+	"DeviceListRequest":              PayloadDeviceListRequest,
+	"DeviceListResponse":             PayloadDeviceListResponse,
+	"DeviceRevokeRequest":            PayloadDeviceRevokeRequest,
+	"DeviceRevokeResponse":           PayloadDeviceRevokeResponse,
+	"PasskeyListRequest":             PayloadPasskeyListRequest,
+	"PasskeyListResponse":            PayloadPasskeyListResponse,
+	"PasskeyRegisterOptionsRequest":  PayloadPasskeyRegisterOptionsRequest,
+	"PasskeyRegisterOptionsResponse": PayloadPasskeyRegisterOptionsResponse,
+	"PasskeyRegisterVerifyRequest":   PayloadPasskeyRegisterVerifyRequest,
+	"PasskeyRegisterVerifyResponse":  PayloadPasskeyRegisterVerifyResponse,
+	"PasskeyDeleteRequest":           PayloadPasskeyDeleteRequest,
+	"PasskeyDeleteResponse":          PayloadPasskeyDeleteResponse,
 }
 
 func (v Payload) String() string {

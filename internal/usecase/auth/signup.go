@@ -33,7 +33,7 @@ func (u *Usecase) BeginSignup(ctx context.Context, ip string) (*SignupOptionsRes
 	challengeID := uuid.New()
 	ch := &passkey.Challenge{
 		ID:          challengeID,
-		UserID:      &tempUserID,
+		UserID:      nil,
 		Type:        passkey.ChallengeTypeSignup,
 		SessionData: sdBytes,
 		ExpiresAt:   time.Now().Add(5 * time.Minute),
@@ -69,21 +69,36 @@ func (u *Usecase) FinishSignup(
 		_ = u.recordAuthFailure(ctx, nil, "signup", ip, userAgent, requestID, "invalid_or_consumed_challenge")
 		return nil, fmt.Errorf("auth: consume challenge failed: %w", err)
 	}
-	if ch.Type != passkey.ChallengeTypeSignup || ch.UserID == nil {
+	if ch.Type != passkey.ChallengeTypeSignup {
 		_ = u.recordAuthFailure(ctx, nil, "signup", ip, userAgent, requestID, "invalid_challenge_type")
 		return nil, errors.New("auth: invalid signup challenge")
 	}
 
-	tempUser := &user.User{ID: *ch.UserID, CreatedAt: time.Now()}
+	var userID uuid.UUID
+	if ch.UserID != nil {
+		userID = *ch.UserID
+	} else {
+		var sd struct {
+			UserID []byte `json:"user_id"`
+		}
+		if err := json.Unmarshal(ch.SessionData, &sd); err == nil && len(sd.UserID) == 16 {
+			userID, _ = uuid.FromBytes(sd.UserID)
+		}
+		if userID == uuid.Nil {
+			userID = uuid.New()
+		}
+	}
+
+	tempUser := &user.User{ID: userID, CreatedAt: time.Now()}
 
 	cred, err := u.webAuthnService.FinishRegistration(tempUser, nil, ch.SessionData, responsePayload)
 	if err != nil {
-		_ = u.recordAuthFailure(ctx, ch.UserID, "signup", ip, userAgent, requestID, err.Error())
+		_ = u.recordAuthFailure(ctx, nil, "signup", ip, userAgent, requestID, err.Error())
 		return nil, fmt.Errorf("auth: webauthn verification failed: %w", err)
 	}
 
 	now := time.Now()
-	newUser := &user.User{ID: *ch.UserID, CreatedAt: now}
+	newUser := &user.User{ID: userID, CreatedAt: now}
 	newIdent := &identity.Identity{
 		ID:         uuid.New(),
 		UserID:     newUser.ID,
@@ -106,13 +121,6 @@ func (u *Usecase) FinishSignup(
 	}
 
 	var deviceID *uuid.UUID
-	if rawDeviceID != "" && platform != "" {
-		devID, err := u.resolveOrCreateDevice(ctx, newUser.ID, rawDeviceID, platform, appVersion)
-		if err == nil {
-			deviceID = &devID
-		}
-	}
-
 	err = u.txManager.WithTx(ctx, func(txCtx context.Context) error {
 		if err := u.userRepo.Create(txCtx, newUser); err != nil {
 			return err
@@ -122,6 +130,13 @@ func (u *Usecase) FinishSignup(
 		}
 		if err := u.passkeyRepo.Create(txCtx, newCred); err != nil {
 			return err
+		}
+
+		if rawDeviceID != "" && platform != "" {
+			devID, err := u.resolveOrCreateDevice(txCtx, newUser.ID, rawDeviceID, platform, appVersion)
+			if err == nil {
+				deviceID = &devID
+			}
 		}
 
 		auditEv := &audit.Event{

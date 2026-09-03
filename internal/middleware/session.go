@@ -18,7 +18,11 @@ type (
 	sessIDCtxKey  struct{}
 )
 
-func SessionMiddleware(sessionUC *sessionUC.Usecase, allowedOrigins []string) func(http.Handler) http.Handler {
+func BootstrapSessionMiddleware(
+	sessionUC *sessionUC.Usecase,
+	allowedOrigins []string,
+	onInvalidCookie func(w http.ResponseWriter, r *http.Request),
+) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token, isCookie := extractSessionToken(r)
@@ -36,6 +40,9 @@ func SessionMiddleware(sessionUC *sessionUC.Usecase, allowedOrigins []string) fu
 
 			sess, err := sessionUC.Validate(r.Context(), token)
 			if err != nil {
+				if isCookie && onInvalidCookie != nil {
+					onInvalidCookie(w, r)
+				}
 				writeJSONError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Invalid or expired session")
 				return
 			}
@@ -48,6 +55,40 @@ func SessionMiddleware(sessionUC *sessionUC.Usecase, allowedOrigins []string) fu
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func NativeBearerSessionMiddleware(sessionUC *sessionUC.Usecase) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if !strings.HasPrefix(authHeader, "Bearer ") {
+				writeJSONError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Bearer token authentication required")
+				return
+			}
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			if token == "" {
+				writeJSONError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Bearer token required")
+				return
+			}
+
+			sess, err := sessionUC.Validate(r.Context(), token)
+			if err != nil {
+				writeJSONError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Invalid or expired session")
+				return
+			}
+
+			ctx := r.Context()
+			ctx = context.WithValue(ctx, sessionCtxKey{}, sess)
+			ctx = context.WithValue(ctx, userIDCtxKey{}, sess.UserID)
+			ctx = context.WithValue(ctx, sessIDCtxKey{}, sess.ID)
+
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func SessionMiddleware(sessionUC *sessionUC.Usecase, allowedOrigins []string) func(http.Handler) http.Handler {
+	return BootstrapSessionMiddleware(sessionUC, allowedOrigins, nil)
 }
 
 func GetSession(ctx context.Context) *session.Session {
@@ -72,13 +113,16 @@ func GetSessionID(ctx context.Context) uuid.UUID {
 }
 
 func extractSessionToken(r *http.Request) (token string, isCookie bool) {
+	if cookie, err := r.Cookie("__Host-session_token"); err == nil && cookie.Value != "" {
+		return cookie.Value, true
+	}
+	if cookie, err := r.Cookie("session_token"); err == nil && cookie.Value != "" {
+		return cookie.Value, true
+	}
+
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		return strings.TrimPrefix(authHeader, "Bearer "), false
-	}
-
-	if cookie, err := r.Cookie("session_token"); err == nil && cookie.Value != "" {
-		return cookie.Value, true
 	}
 
 	return "", false
@@ -108,12 +152,6 @@ func validateCSRF(r *http.Request, allowedOrigins []string) bool {
 			}
 		}
 		return false
-	}
-
-	csrfHeader := r.Header.Get("X-CSRF-Token")
-	csrfCookie, err := r.Cookie("csrf_token")
-	if err == nil && csrfHeader != "" && csrfHeader == csrfCookie.Value {
-		return true
 	}
 
 	return false

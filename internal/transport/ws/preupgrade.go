@@ -116,7 +116,8 @@ func (s *Server) validatePreUpgrade(w http.ResponseWriter, r *http.Request) (*pr
 
 func (s *Server) performHandshake(ctx context.Context, wsConn *websocket.Conn, clientIP string, maskSecret []byte) (c2sKey, s2cKey []byte, err error) {
 	if s.wireauthServer == nil {
-		return make([]byte, 32), make([]byte, 32), nil
+		_ = wsConn.Close()
+		return nil, nil, fmt.Errorf("wireauth: server not initialised — refusing connection to prevent insecure zero-key fallback")
 	}
 
 	_ = wsConn.SetReadDeadline(time.Now().Add(s.cfg.WSHandshakeTimeout))
@@ -127,7 +128,7 @@ func (s *Server) performHandshake(ctx context.Context, wsConn *websocket.Conn, c
 
 	wireauthSession, err := s.wireauthServer.Perform(handshakeCtx, wsConn)
 	if err != nil {
-		s.log.Warn("Wireauth v2 handshake failed", "masked_ip", logger.MaskIdentifier(clientIP, maskSecret))
+		s.log.Warn("Wireauth v2 handshake failed", "error", err, "masked_ip", logger.MaskIdentifier(clientIP, maskSecret))
 		_ = wsConn.Close()
 		return nil, nil, err
 	}

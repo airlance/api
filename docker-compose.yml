@@ -41,6 +41,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: airlance-api
+    entrypoint: ["sh", "-c", "/app/airlance-api migrate up && exec /app/airlance-api serve"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,6 +61,9 @@ services:
       SMTP_STARTTLS: "false"
       LOG_LEVEL: debug
       LOG_FORMAT: console
+      WIREAUTH_RSA_KEY_PATH: /app/wireauth_private_key.pem
+    volumes:
+      - ./wireauth_private_key.pem:/app/wireauth_private_key.pem:ro
     ports:
       - "8080:8080"
 

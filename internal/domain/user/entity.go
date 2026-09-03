@@ -13,6 +13,6 @@ var (
 )
 
 type User struct {
-	ID        uuid.UUID
-	CreatedAt time.Time
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
 }

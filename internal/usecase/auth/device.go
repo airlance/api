@@ -72,11 +72,18 @@ func (u *Usecase) resolveOrCreateDevice(ctx context.Context, userID uuid.UUID, r
 	var matchedDevice *device.Device
 	var needsRotation bool
 
+	now := time.Now()
 	for _, key := range ring.Keys {
 		h := crypto.ComputeHMAC(data, key)
 		dev, err := u.deviceRepo.GetByHash(ctx, h)
-		if err == nil && dev != nil && dev.UserID == userID && dev.IsValid() {
+		if err == nil && dev != nil {
 			matchedDevice = dev
+			if dev.UserID != userID {
+				_ = u.deviceRepo.RebindUser(ctx, dev.ID, userID, appVersion, now)
+				matchedDevice.UserID = userID
+			} else {
+				_ = u.deviceRepo.Touch(ctx, dev.ID, appVersion, now)
+			}
 			currentKey := ring.Keys[ring.CurrentKeyID]
 			if !crypto.ConstantTimeCompareBytes(h, crypto.ComputeHMAC(data, currentKey)) {
 				needsRotation = true
@@ -85,9 +92,7 @@ func (u *Usecase) resolveOrCreateDevice(ctx context.Context, userID uuid.UUID, r
 		}
 	}
 
-	now := time.Now()
 	if matchedDevice != nil {
-		_ = u.deviceRepo.Touch(ctx, matchedDevice.ID, appVersion, now)
 		if needsRotation {
 			newHash, _, _ := crypto.ComputeKeyRingHMAC(data, ring)
 			_ = u.deviceRepo.UpdateHash(ctx, matchedDevice.ID, newHash)

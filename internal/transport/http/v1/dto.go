@@ -88,9 +88,34 @@ type CredentialResponse struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
+// CredentialListResponse wraps a list of passkey credentials.
+type CredentialListResponse struct {
+	Credentials []CredentialResponse `json:"credentials"`
+}
+
 // StatusResponse is a generic status response.
 type StatusResponse struct {
 	Status string `json:"status"`
+}
+
+// WebAuthUserResponse represents the minimal user information returned upon web authentication.
+type WebAuthUserResponse struct {
+	ID uuid.UUID `json:"id"`
+}
+
+// WebAuthSuccessResponse is the safe public DTO for web passkey signup and login verify.
+// It deliberately omits raw tokens, token hashes, and internal session structures.
+type WebAuthSuccessResponse struct {
+	User      WebAuthUserResponse `json:"user"`
+	IsNewUser bool                `json:"is_new_user,omitempty"`
+}
+
+// NativeAuthSuccessResponse is returned by dedicated native passkey verify endpoints
+// to supply native clients with a bearer session token.
+type NativeAuthSuccessResponse struct {
+	Token     string              `json:"token"`
+	User      WebAuthUserResponse `json:"user"`
+	IsNewUser bool                `json:"is_new_user,omitempty"`
 }
 
 // RateLimitUsageDTO details usage for a specific rate limit window.
@@ -168,4 +193,13 @@ func ToCredentialResponse(c *passkey.Credential) CredentialResponse {
 		CreatedAt:  c.CreatedAt,
 		LastUsedAt: c.LastUsedAt,
 	}
+}
+
+// ToCredentialListResponse maps a slice of domain Credential entities to CredentialListResponse.
+func ToCredentialListResponse(credentials []*passkey.Credential) CredentialListResponse {
+	res := make([]CredentialResponse, len(credentials))
+	for i, c := range credentials {
+		res[i] = ToCredentialResponse(c)
+	}
+	return CredentialListResponse{Credentials: res}
 }

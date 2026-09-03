@@ -98,6 +98,8 @@ func TestLoadFromEnv_Production_RequireTLS_ExplicitIngress(t *testing.T) {
 	t.Setenv("JWT_CURRENT_KID", "k1")
 	t.Setenv("JWT_ED25519_KEYS", "k1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 	t.Setenv("WIREAUTH_RSA_KEY_PEM", rsaPEM)
+	t.Setenv("NATIVE_AUTH_HOSTNAME", "native.example.test")
+	t.Setenv("NATIVE_APP_SECRET_KEY", "0123456789abcdef0123456789abcdef")
 	t.Setenv("REQUIRE_TLS", "true")
 
 	_, err := LoadFromEnv()
@@ -126,6 +128,32 @@ func TestLoadFromEnv_Production_RequireTLS_ExplicitIngress(t *testing.T) {
 	t.Setenv("SMTP_STARTTLS", "true")
 	if _, err := LoadFromEnv(); err != nil {
 		t.Fatalf("expected production SMTP with STARTTLS to load: %v", err)
+	}
+}
+
+func TestLoadFromEnv_Production_RequiresNativeAuthConfiguration(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("DEVICE_HMAC_KEYS", "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("AUDIT_HMAC_KEYS", "1:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210")
+	t.Setenv("OTP_HMAC_KEYS", "1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("JWT_CURRENT_KID", "k1")
+	t.Setenv("JWT_ED25519_KEYS", "k1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	t.Setenv("WIREAUTH_RSA_KEY_PEM", generateTestRSAPEM())
+	t.Setenv("TLS_TERMINATION_INGRESS", "true")
+
+	if _, err := LoadFromEnv(); err == nil {
+		t.Fatal("expected production configuration without native hostname and signing key to fail")
+	}
+
+	t.Setenv("NATIVE_AUTH_HOSTNAME", "native.example.test")
+	t.Setenv("NATIVE_APP_SECRET_KEY", "too-short")
+	if _, err := LoadFromEnv(); err == nil {
+		t.Fatal("expected production configuration with a short native signing key to fail")
+	}
+
+	t.Setenv("NATIVE_APP_SECRET_KEY", "0123456789abcdef0123456789abcdef")
+	if _, err := LoadFromEnv(); err != nil {
+		t.Fatalf("expected valid production native configuration, got %v", err)
 	}
 }
 

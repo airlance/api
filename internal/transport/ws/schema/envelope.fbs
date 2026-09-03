@@ -77,6 +77,91 @@ table LogoutResponse {
     session_id: string;
 }
 
+table UserProfileRequest {}
+
+table UserProfileResponse {
+    user_id: string;
+    session_id: string;
+    device_id: string;
+}
+
+table SessionRevokeRequest {
+    session_id: string;
+}
+
+table SessionRevokeResponse {
+    session_id: string;
+}
+
+table SessionRevokeAllRequest {}
+
+table SessionRevokeAllResponse {
+    status: string;
+}
+
+table DeviceInfo {
+    device_id: string;
+    platform: string;
+    created_at_ms: ulong;
+    last_seen_at_ms: ulong;
+    last_app_version: string;
+    revoked_at_ms: ulong;
+    is_current: bool;
+}
+
+table DeviceListRequest {}
+
+table DeviceListResponse {
+    devices: [DeviceInfo];
+}
+
+table DeviceRevokeRequest {
+    device_id: string;
+}
+
+table DeviceRevokeResponse {
+    device_id: string;
+}
+
+table PasskeyInfo {
+    id: string;
+    aaguid: string;
+    transports: [string];
+    created_at_ms: ulong;
+    last_used_at_ms: ulong;
+}
+
+table PasskeyListRequest {}
+
+table PasskeyListResponse {
+    credentials: [PasskeyInfo];
+}
+
+table PasskeyRegisterOptionsRequest {}
+
+table PasskeyRegisterOptionsResponse {
+    challenge_id: string;
+    options_json: string;
+}
+
+table PasskeyRegisterVerifyRequest {
+    challenge_id: string;
+    response_json: string;
+}
+
+table PasskeyRegisterVerifyResponse {
+    id: string;
+    created_at_ms: ulong;
+}
+
+table PasskeyDeleteRequest {
+    id: string;
+}
+
+table PasskeyDeleteResponse {
+    id: string;
+}
+
 union Payload {
     Ping,
     Pong,
@@ -90,7 +175,25 @@ union Payload {
     SessionListRequest,
     SessionListResponse,
     LogoutRequest,
-    LogoutResponse
+    LogoutResponse,
+    UserProfileRequest,
+    UserProfileResponse,
+    SessionRevokeRequest,
+    SessionRevokeResponse,
+    SessionRevokeAllRequest,
+    SessionRevokeAllResponse,
+    DeviceListRequest,
+    DeviceListResponse,
+    DeviceRevokeRequest,
+    DeviceRevokeResponse,
+    PasskeyListRequest,
+    PasskeyListResponse,
+    PasskeyRegisterOptionsRequest,
+    PasskeyRegisterOptionsResponse,
+    PasskeyRegisterVerifyRequest,
+    PasskeyRegisterVerifyResponse,
+    PasskeyDeleteRequest,
+    PasskeyDeleteResponse
 }
 
 table Envelope {

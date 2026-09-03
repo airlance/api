@@ -186,3 +186,7 @@ func (u *Usecase) DeleteCredential(ctx context.Context, userID, credentialID uui
 
 	return err
 }
+
+func (u *Usecase) ListCredentials(ctx context.Context, userID uuid.UUID) ([]*passkey.Credential, error) {
+	return u.passkeyRepo.ListByUserID(ctx, userID)
+}

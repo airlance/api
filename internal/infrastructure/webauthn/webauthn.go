@@ -3,10 +3,12 @@ package webauthn
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
@@ -40,8 +42,10 @@ func NewEngine(cfg *config.Config) (*Engine, error) {
 }
 
 type WebAuthnUser struct {
-	User        *user.User
-	Credentials []*passkey.Credential
+	User           *user.User
+	Credentials    []*passkey.Credential
+	BackupEligible bool
+	BackupState    bool
 }
 
 func (u *WebAuthnUser) WebAuthnID() []byte {
@@ -75,8 +79,8 @@ func (u *WebAuthnUser) WebAuthnCredentials() []gowebauthn.Credential {
 			Flags: gowebauthn.CredentialFlags{
 				UserPresent:    true,
 				UserVerified:   true,
-				BackupEligible: true,
-				BackupState:    true,
+				BackupEligible: u.BackupEligible,
+				BackupState:    u.BackupState,
 			},
 			Authenticator: gowebauthn.Authenticator{
 				AAGUID:    aaguidBytes,
@@ -198,6 +202,27 @@ func (e *Engine) FinishLogin(ctx context.Context, sessionData []byte, responsePa
 		return nil, nil, fmt.Errorf("webauthn: parse session data failed: %w", err)
 	}
 
+	be := true
+	bs := true
+	type assertionJSON struct {
+		Response struct {
+			AuthenticatorData string `json:"authenticatorData"`
+		} `json:"response"`
+	}
+	var aj assertionJSON
+	if err := json.Unmarshal(responsePayload, &aj); err == nil && aj.Response.AuthenticatorData != "" {
+		clean := strings.TrimRight(aj.Response.AuthenticatorData, "=")
+		if authData, err := base64.RawURLEncoding.DecodeString(clean); err == nil && len(authData) >= 33 {
+			flags := authData[32]
+			be = (flags & 0x08) != 0
+			bs = (flags & 0x10) != 0
+		} else if authData, err := base64.StdEncoding.DecodeString(aj.Response.AuthenticatorData); err == nil && len(authData) >= 33 {
+			flags := authData[32]
+			be = (flags & 0x08) != 0
+			bs = (flags & 0x10) != 0
+		}
+	}
+
 	var resolvedUser *user.User
 	userHandler := func(rawID, userHandle []byte) (gowebauthn.User, error) {
 		u, creds, err := lookup(ctx, rawID, userHandle)
@@ -205,7 +230,12 @@ func (e *Engine) FinishLogin(ctx context.Context, sessionData []byte, responsePa
 			return nil, err
 		}
 		resolvedUser = u
-		return &WebAuthnUser{User: u, Credentials: creds}, nil
+		return &WebAuthnUser{
+			User:           u,
+			Credentials:    creds,
+			BackupEligible: be,
+			BackupState:    bs,
+		}, nil
 	}
 
 	dummyReq, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(responsePayload))

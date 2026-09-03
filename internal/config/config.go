@@ -85,6 +85,9 @@ type Config struct {
 	WSIdleTimeout           time.Duration
 	MinSupportedProtocol    uint32
 	CurrentProtocol         uint32
+	NativeAuthHostname      string
+	NativeAppSecretKey      string
+	NativeAppID             string
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -138,6 +141,9 @@ func LoadFromEnv() (*Config, error) {
 		WSIdleTimeout:           getEnvDuration("WS_IDLE_TIMEOUT", 60*time.Second),
 		MinSupportedProtocol:    uint32(getEnvInt("MIN_SUPPORTED_PROTOCOL", 1)),
 		CurrentProtocol:         uint32(getEnvInt("CURRENT_PROTOCOL", 2)),
+		NativeAuthHostname:      getEnv("NATIVE_AUTH_HOSTNAME", ""),
+		NativeAppSecretKey:      getEnv("NATIVE_APP_SECRET_KEY", nativeAppSecretDefault(isDevOrTest)),
+		NativeAppID:             getEnv("NATIVE_APP_ID", "org.airlance.native"),
 	}
 
 	proxiesStr := getEnv("TRUSTED_PROXIES", "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
@@ -236,6 +242,18 @@ func LoadFromEnv() (*Config, error) {
 		}
 	}
 
+	if !isDevOrTest {
+		if strings.TrimSpace(cfg.NativeAuthHostname) == "" {
+			return nil, fmt.Errorf("%w: NATIVE_AUTH_HOSTNAME is required outside development/test", ErrInvalidConfig)
+		}
+		if strings.TrimSpace(cfg.NativeAppID) == "" {
+			return nil, fmt.Errorf("%w: NATIVE_APP_ID is required outside development/test", ErrInvalidConfig)
+		}
+		if len(cfg.NativeAppSecretKey) < 32 {
+			return nil, fmt.Errorf("%w: NATIVE_APP_SECRET_KEY must be at least 32 bytes outside development/test", ErrInvalidConfig)
+		}
+	}
+
 	if cfg.SMTPEnabled {
 		if strings.TrimSpace(cfg.SMTPHost) == "" {
 			return nil, fmt.Errorf("%w: SMTP_HOST is required when SMTP_ENABLED=true", ErrInvalidConfig)
@@ -259,6 +277,13 @@ func LoadFromEnv() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func nativeAppSecretDefault(isDevOrTest bool) string {
+	if isDevOrTest {
+		return "dev-native-app-secret-key-32b-min"
+	}
+	return ""
 }
 
 func parseCIDRs(raw string) ([]*net.IPNet, error) {

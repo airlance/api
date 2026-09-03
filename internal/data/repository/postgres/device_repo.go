@@ -90,6 +90,23 @@ func (r *DeviceRepository) Touch(ctx context.Context, id uuid.UUID, appVersion *
 	return nil
 }
 
+func (r *DeviceRepository) RebindUser(ctx context.Context, id uuid.UUID, userID uuid.UUID, appVersion *string, lastSeen time.Time) error {
+	exec := database.GetExecutor(ctx, r.pool)
+	query := `
+		UPDATE devices
+		SET user_id = $1, last_seen_at = $2, last_app_version = COALESCE($3, last_app_version), revoked_at = NULL
+		WHERE id = $4
+	`
+	cmd, err := exec.Exec(ctx, query, userID, lastSeen, appVersion, id)
+	if err != nil {
+		return fmt.Errorf("device_repo: rebind user failed: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return device.ErrNotFound
+	}
+	return nil
+}
+
 func (r *DeviceRepository) UpdateHash(ctx context.Context, id uuid.UUID, newHash []byte) error {
 	exec := database.GetExecutor(ctx, r.pool)
 	query := `UPDATE devices SET device_identifier_hash = $1 WHERE id = $2`

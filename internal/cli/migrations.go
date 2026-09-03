@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -50,7 +51,14 @@ func getMigrateInstance(dsn string) (*migrate.Migrate, error) {
 		}
 	}
 
-	m, err := migrate.New(fmt.Sprintf("file://%s", absDir), dsn)
+	migrateDSN := dsn
+	if strings.HasPrefix(migrateDSN, "postgres://") {
+		migrateDSN = "pgx5://" + strings.TrimPrefix(migrateDSN, "postgres://")
+	} else if strings.HasPrefix(migrateDSN, "postgresql://") {
+		migrateDSN = "pgx5://" + strings.TrimPrefix(migrateDSN, "postgresql://")
+	}
+
+	m, err := migrate.New(fmt.Sprintf("file://%s", absDir), migrateDSN)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize migrate: %w", err)
 	}

@@ -20,6 +20,7 @@ RUN apk add --no-cache ca-certificates tzdata
 
 COPY --from=builder /app/airlance-api /app/airlance-api
 COPY migrations /app/migrations
+COPY wireauth_private_key.pem* /app/
 
 EXPOSE 8080
 

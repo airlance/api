@@ -141,33 +141,41 @@ default). Set it to the CIDRs used by the production monitoring network.
 All responses and errors are JSON. Errors use the following shape:
 `{"error":{"code":"…","message":"…"}}`.
 
-Access levels: **public** (no auth), **session** (`session_token` cookie or
-session `Authorization: Bearer`, subject to CSRF checks on cookie-mode
-mutating requests), **jwt** (external API `Authorization: Bearer`, Ed25519,
-`iss`/`aud`-checked), **internal** (gated by `METRICS_ALLOWED_CIDRS` or
-equivalent allowlist, not meant to be reachable from the public internet).
+Access levels:
+- **public**: unauthenticated browser flow.
+- **browser-web**: browser WebAuthn verify; strictly requires exact `Origin` in `WEBAUTHN_RP_ORIGINS`, sets HttpOnly `__Host-session_token` cookie, returns safe `WebAuthSuccessResponse` (no tokens/secrets).
+- **native-auth**: dedicated native app contract on `NATIVE_AUTH_HOSTNAME`; zero CORS and browser-context blocking. `X-App-Attestation` is a short-lived shared-key request signature, not hardware app attestation; production deployments must set a 32+ byte `NATIVE_APP_SECRET_KEY` and should use platform-verifiable attestation when app authenticity is required. Returns bearer token `NativeAuthSuccessResponse`.
+- **session-bootstrap**: `sessionAuth` on `POST /api/v1/ws/ticket`; accepts cookie or bearer, purges invalid cookie on 401.
+- **session-bearer**: native operational endpoints (`/clients`, etc.); requires `Authorization: Bearer <token>`, strictly denies cookies.
+- **jwt**: external API `Authorization: Bearer <jwt>`, Ed25519 signature & `iss`/`aud` verified.
+- **internal**: gated by `METRICS_ALLOWED_CIDRS` allowlist.
 
 | Method | Route | Access | Purpose |
 | --- | --- | --- | --- |
 | `GET` | `/livez` | public | Process liveness; does not call dependencies. |
-| `GET` | `/readyz`, `/healthz` | public | Checks PostgreSQL, Redis, and the supported schema-version range. |
+| `GET` | `/readyz`, `/healthz` | public | Checks PostgreSQL, Redis, and supported schema-version range. |
 | `GET` | `/metrics` | internal | Prometheus metrics scrape endpoint; CIDR-gated. |
-| `POST` | `/api/v1/auth/passkey/signup/options` | public | Start passkey signup. |
-| `POST` | `/api/v1/auth/passkey/signup/verify?challenge_id=` | public | Verify signup and create a session. |
-| `POST` | `/api/v1/auth/passkey/login/options` | public | Start discoverable passkey login. |
-| `POST` | `/api/v1/auth/passkey/login/verify?challenge_id=` | public | Verify an assertion and create a session. |
-| `POST` | `/api/v1/auth/passkey/register/options` | session | Start adding a credential. |
-| `POST` | `/api/v1/auth/passkey/register/verify?challenge_id=` | session | Verify the credential. |
-| `DELETE` | `/api/v1/auth/passkey/{credentialID}` | session | Remove an owned credential; the last one cannot be removed. |
-| `POST` | `/api/v1/auth/session/revoke` | session | Revoke current authenticated session. |
-| `POST` | `/api/v1/auth/sessions/revoke-all` | session | Revoke all active sessions for current user. |
-| `GET` | `/api/v1/devices` | session | List registered devices for current user. |
-| `DELETE` | `/api/v1/devices/{id}` | session | Revoke an owned device. |
-| `POST` | `/api/v1/ws/ticket` | session | Issue a single-use WS ticket. |
-| `POST`, `GET` | `/api/v1/clients` | session | Create or list API clients. |
-| `DELETE` | `/api/v1/clients/{id}` | session | Revoke an owned API client. |
-| `POST` | `/api/v1/auth/token` | public | Obtain a JWT from a `client_id` and one-time secret (IP rate-limited). |
+| `POST` | `/api/v1/auth/passkey/signup/options` | public | Start browser passkey signup ceremony. |
+| `POST` | `/api/v1/auth/passkey/signup/verify?challenge_id=` | browser-web | Verify web signup, set HttpOnly cookie, return safe DTO. |
+| `POST` | `/api/v1/auth/passkey/login/options` | public | Start browser discoverable passkey login ceremony. |
+| `POST` | `/api/v1/auth/passkey/login/verify?challenge_id=` | browser-web | Verify web assertion, set HttpOnly cookie, return safe DTO. |
+| `POST` | `/api/v1/native/auth/passkey/signup/options` | native-auth | Start native passkey signup ceremony (requires shared-key request signature). |
+| `POST` | `/api/v1/native/auth/passkey/signup/verify?challenge_id=` | native-auth | Verify native signup, return bearer token (zero CORS, requires shared-key request signature). |
+| `POST` | `/api/v1/native/auth/passkey/login/options` | native-auth | Start native discoverable login ceremony (requires shared-key request signature). |
+| `POST` | `/api/v1/native/auth/passkey/login/verify?challenge_id=` | native-auth | Verify native login, return bearer token (zero CORS, requires shared-key request signature). |
+| `POST` | `/api/v1/ws/ticket` | session-bootstrap | Issue single-use WS ticket (clears stale cookie on 401). |
+| `POST` | `/api/v1/auth/passkey/register/options` | session-bearer | Native: start adding a credential. |
+| `POST` | `/api/v1/auth/passkey/register/verify?challenge_id=` | session-bearer | Native: verify credential addition. |
+| `GET` | `/api/v1/auth/passkey` | session-bearer | Native: list passkey credentials. |
+| `DELETE` | `/api/v1/auth/passkey/{credentialID}` | session-bearer | Native: remove an owned credential. |
+| `GET` | `/api/v1/devices` | session-bearer | Native: list registered devices. |
+| `DELETE` | `/api/v1/devices/{id}` | session-bearer | Native: revoke an owned device. |
+| `POST`, `GET` | `/api/v1/clients` | session-bearer | Create or list API clients. |
+| `DELETE` | `/api/v1/clients/{id}` | session-bearer | Revoke an owned API client. |
+| `POST` | `/api/v1/auth/token` | public | Obtain a JWT from a `client_id` and secret (rate-limited). |
 | `GET` | `/api/v1/getMe` | jwt | User/client identity and current rate-limit usage. |
+
+*Note: Dashboard sessions, devices, and credential management are performed over encrypted WebSocket via WireAuth v2 messages; session revocation and logout occur via WS `LogoutRequest`.*
 
 ## Security
 

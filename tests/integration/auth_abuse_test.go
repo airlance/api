@@ -93,6 +93,9 @@ func (d *dummyDeviceRepo) GetByHash(ctx context.Context, hash []byte) (*device.D
 func (d *dummyDeviceRepo) Touch(ctx context.Context, id uuid.UUID, appVersion *string, lastSeen time.Time) error {
 	return nil
 }
+func (d *dummyDeviceRepo) RebindUser(ctx context.Context, id uuid.UUID, userID uuid.UUID, appVersion *string, lastSeen time.Time) error {
+	return nil
+}
 func (d *dummyDeviceRepo) UpdateHash(ctx context.Context, id uuid.UUID, newHash []byte) error {
 	return nil
 }

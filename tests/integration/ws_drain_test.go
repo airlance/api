@@ -44,7 +44,6 @@ func TestWebSocket_GracefulDrainingShutdown(t *testing.T) {
 	ts := httptest.NewServer(server)
 	defer ts.Close()
 
-	// 1. Issue ticket & connect
 	ticketID := "test-drain-ticket"
 	_ = ticketRepo.Create(context.Background(), &wsticket.Ticket{
 		ID:        ticketID,
@@ -61,7 +60,6 @@ func TestWebSocket_GracefulDrainingShutdown(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	// Wait briefly for registration to settle
 	for i := 0; i < 20 && registry.Count() == 0; i++ {
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -70,13 +68,11 @@ func TestWebSocket_GracefulDrainingShutdown(t *testing.T) {
 		t.Errorf("expected 1 active connection, got %d", registry.Count())
 	}
 
-	// 2. Trigger graceful drain
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		_ = server.Shutdown(context.Background())
 	}()
 
-	// 3. Read message on client - expect CloseGoingAway (1001)
 	_, _, err = conn.ReadMessage()
 	if err == nil {
 		t.Fatalf("expected close error")

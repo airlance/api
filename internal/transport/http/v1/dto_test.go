@@ -47,7 +47,7 @@ func TestDTO_DeviceResponse(t *testing.T) {
 	if m["last_app_version"] != "1.2.3" {
 		t.Errorf("expected last_app_version 1.2.3, got %v", m["last_app_version"])
 	}
-	// Verify internal hash is not leaked
+
 	if _, ok := m["device_identifier_hash"]; ok {
 		t.Errorf("device_identifier_hash should not be present in json output")
 	}
@@ -98,7 +98,7 @@ func TestDTO_ClientResponse(t *testing.T) {
 	if m["name"] != "TestClient" {
 		t.Errorf("expected name TestClient, got %v", m["name"])
 	}
-	// Verify secret hash and key id are not present
+
 	if _, ok := m["secret_hash"]; ok {
 		t.Errorf("secret_hash should not be present in json")
 	}
@@ -185,7 +185,7 @@ func TestDTO_CredentialResponse(t *testing.T) {
 	if m["aaguid"] != aaguid.String() {
 		t.Errorf("expected aaguid %s, got %v", aaguid.String(), m["aaguid"])
 	}
-	// Verify raw crypto bytes are not leaked directly
+
 	if _, ok := m["credential_id"]; ok {
 		t.Errorf("credential_id raw bytes should not be exposed")
 	}

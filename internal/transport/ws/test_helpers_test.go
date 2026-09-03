@@ -233,25 +233,53 @@ func (m *mockUserRepo) GetByID(ctx context.Context, id uuid.UUID) (*user.User, e
 	return nil, user.ErrNotFound
 }
 
-type mockPasskeyCredRepo struct{}
+type mockPasskeyCredRepo struct {
+	creds     map[uuid.UUID]*passkey.Credential
+	userCreds map[uuid.UUID][]*passkey.Credential
+}
 
-func (m *mockPasskeyCredRepo) Create(ctx context.Context, c *passkey.Credential) error { return nil }
+func (m *mockPasskeyCredRepo) Create(ctx context.Context, c *passkey.Credential) error {
+	if m.creds == nil {
+		m.creds = make(map[uuid.UUID]*passkey.Credential)
+	}
+	m.creds[c.ID] = c
+	return nil
+}
 func (m *mockPasskeyCredRepo) GetByCredentialID(ctx context.Context, credID []byte) (*passkey.Credential, error) {
 	return nil, passkey.ErrCredentialNotFound
 }
 func (m *mockPasskeyCredRepo) GetByID(ctx context.Context, id uuid.UUID) (*passkey.Credential, error) {
+	if m.creds != nil {
+		if c, ok := m.creds[id]; ok {
+			return c, nil
+		}
+	}
 	return nil, passkey.ErrCredentialNotFound
 }
 func (m *mockPasskeyCredRepo) ListByIdentityID(ctx context.Context, identityID uuid.UUID) ([]*passkey.Credential, error) {
 	return nil, nil
 }
 func (m *mockPasskeyCredRepo) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*passkey.Credential, error) {
-	return nil, nil
+	if m.userCreds != nil {
+		if list, ok := m.userCreds[userID]; ok {
+			return list, nil
+		}
+	}
+	var res []*passkey.Credential
+	for _, c := range m.creds {
+		res = append(res, c)
+	}
+	return res, nil
 }
 func (m *mockPasskeyCredRepo) UpdateSignCount(ctx context.Context, id uuid.UUID, newCount uint32, lastUsedAt time.Time) error {
 	return nil
 }
-func (m *mockPasskeyCredRepo) DeleteByID(ctx context.Context, id uuid.UUID) error { return nil }
+func (m *mockPasskeyCredRepo) DeleteByID(ctx context.Context, id uuid.UUID) error {
+	if m.creds != nil {
+		delete(m.creds, id)
+	}
+	return nil
+}
 
 type mockChallengeRepo struct{}
 
@@ -263,10 +291,23 @@ func (m *mockChallengeRepo) CleanupExpired(ctx context.Context, before time.Time
 	return 0, nil
 }
 
-type mockDeviceRepo struct{}
+type mockDeviceRepo struct {
+	devices map[uuid.UUID]*device.Device
+}
 
-func (m *mockDeviceRepo) Create(ctx context.Context, d *device.Device) error { return nil }
+func (m *mockDeviceRepo) Create(ctx context.Context, d *device.Device) error {
+	if m.devices == nil {
+		m.devices = make(map[uuid.UUID]*device.Device)
+	}
+	m.devices[d.ID] = d
+	return nil
+}
 func (m *mockDeviceRepo) GetByID(ctx context.Context, id uuid.UUID) (*device.Device, error) {
+	if m.devices != nil {
+		if d, ok := m.devices[id]; ok {
+			return d, nil
+		}
+	}
 	return nil, device.ErrNotFound
 }
 func (m *mockDeviceRepo) GetByHash(ctx context.Context, hash []byte) (*device.Device, error) {
@@ -275,12 +316,29 @@ func (m *mockDeviceRepo) GetByHash(ctx context.Context, hash []byte) (*device.De
 func (m *mockDeviceRepo) Touch(ctx context.Context, id uuid.UUID, appVersion *string, lastSeen time.Time) error {
 	return nil
 }
+func (m *mockDeviceRepo) RebindUser(ctx context.Context, id uuid.UUID, userID uuid.UUID, appVersion *string, lastSeen time.Time) error {
+	return nil
+}
 func (m *mockDeviceRepo) UpdateHash(ctx context.Context, id uuid.UUID, newHash []byte) error {
 	return nil
 }
-func (m *mockDeviceRepo) Revoke(ctx context.Context, id uuid.UUID) error { return nil }
+func (m *mockDeviceRepo) Revoke(ctx context.Context, id uuid.UUID) error {
+	if m.devices != nil {
+		if d, ok := m.devices[id]; ok {
+			now := time.Now()
+			d.RevokedAt = &now
+		}
+	}
+	return nil
+}
 func (m *mockDeviceRepo) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*device.Device, error) {
-	return nil, nil
+	var res []*device.Device
+	for _, d := range m.devices {
+		if d.UserID == userID {
+			res = append(res, d)
+		}
+	}
+	return res, nil
 }
 
 type mockWebAuthnService struct{}
@@ -291,9 +349,7 @@ func (m *mockWebAuthnService) BeginRegistration(u *user.User, existingCreds []*p
 func (m *mockWebAuthnService) FinishRegistration(u *user.User, existingCreds []*passkey.Credential, sessionData []byte, responsePayload []byte) (*passkey.VerifiedCredential, error) {
 	return nil, nil
 }
-func (m *mockWebAuthnService) BeginLogin() ([]byte, []byte, error) {
-	return nil, nil, nil
-}
+func (m *mockWebAuthnService) BeginLogin() ([]byte, []byte, error) { return nil, nil, nil }
 func (m *mockWebAuthnService) FinishLogin(ctx context.Context, sessionData []byte, responsePayload []byte, lookup passkey.UserLookupFunc) (*passkey.VerifiedCredential, *user.User, error) {
 	return nil, nil, nil
 }
@@ -313,13 +369,28 @@ func (l *testLimiter) Usage(ctx context.Context, key string, limits []ratelimit.
 	return nil, nil
 }
 
-func buildTestRouter(t *testing.T) (*Router, *auth.Usecase, *sessionUC.Usecase, *mockOTPRepo, *mockSessionRepo, *mockIdentityRepo, *testLimiter, crypto.KeyRing) {
+type testRouterHarness struct {
+	router      *Router
+	authSvc     *auth.Usecase
+	sessionSvc  *sessionUC.Usecase
+	otpRepo     *mockOTPRepo
+	sessionRepo *mockSessionRepo
+	identRepo   *mockIdentityRepo
+	deviceRepo  *mockDeviceRepo
+	passkeyRepo *mockPasskeyCredRepo
+	limiter     *testLimiter
+	keyRing     crypto.KeyRing
+}
+
+func buildTestRouterFull(t *testing.T) *testRouterHarness {
 	t.Helper()
 	sessionRepo := newMockSessionRepo()
 	auditRepo := &mockAuditRepo{}
 	txMgr := &mockTxManager{}
 	otpRepo := newMockOTPRepo()
 	identRepo := newMockIdentityRepo()
+	deviceRepo := &mockDeviceRepo{devices: make(map[uuid.UUID]*device.Device)}
+	passkeyRepo := &mockPasskeyCredRepo{creds: make(map[uuid.UUID]*passkey.Credential)}
 	limiter := &testLimiter{}
 	mailerMock := &mockMailer{}
 
@@ -334,9 +405,9 @@ func buildTestRouter(t *testing.T) (*Router, *auth.Usecase, *sessionUC.Usecase, 
 	authSvc := auth.NewUsecase(
 		&mockUserRepo{},
 		identRepo,
-		&mockPasskeyCredRepo{},
+		passkeyRepo,
 		&mockChallengeRepo{},
-		&mockDeviceRepo{},
+		deviceRepo,
 		auditRepo,
 		sessionSvc,
 		txMgr,
@@ -353,5 +424,22 @@ func buildTestRouter(t *testing.T) (*Router, *auth.Usecase, *sessionUC.Usecase, 
 	)
 
 	router := NewRouter(1, 2, authSvc, sessionSvc)
-	return router, authSvc, sessionSvc, otpRepo, sessionRepo, identRepo, limiter, keyRing
+	return &testRouterHarness{
+		router:      router,
+		authSvc:     authSvc,
+		sessionSvc:  sessionSvc,
+		otpRepo:     otpRepo,
+		sessionRepo: sessionRepo,
+		identRepo:   identRepo,
+		deviceRepo:  deviceRepo,
+		passkeyRepo: passkeyRepo,
+		limiter:     limiter,
+		keyRing:     keyRing,
+	}
+}
+
+func buildTestRouter(t *testing.T) (*Router, *auth.Usecase, *sessionUC.Usecase, *mockOTPRepo, *mockSessionRepo, *mockIdentityRepo, *testLimiter, crypto.KeyRing) {
+	t.Helper()
+	h := buildTestRouterFull(t)
+	return h.router, h.authSvc, h.sessionSvc, h.otpRepo, h.sessionRepo, h.identRepo, h.limiter, h.keyRing
 }

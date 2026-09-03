@@ -14,26 +14,61 @@ import (
 	sessionUC "airlance.org/api/internal/usecase/session"
 )
 
-func TestValidateCSRF_RequiresDoubleSubmitWhenOriginIsAbsent(t *testing.T) {
-	allowedOrigins := []string{"https://app.example.com"}
+func TestValidateCSRF_OriginAndSecFetchSite(t *testing.T) {
+	allowedOrigins := []string{"https://app.example.com", "http://localhost:3000"}
 
-	missing := httptest.NewRequest(http.MethodPost, "/protected", nil)
-	if validateCSRF(missing, allowedOrigins) {
-		t.Fatal("expected a request without Origin or double-submit token to be rejected")
+	tests := []struct {
+		name         string
+		origin       string
+		secFetchSite string
+		expected     bool
+	}{
+		{
+			name:         "valid dashboard origin",
+			origin:       "https://app.example.com",
+			secFetchSite: "same-origin",
+			expected:     true,
+		},
+		{
+			name:         "valid dev origin same-site",
+			origin:       "http://localhost:3000",
+			secFetchSite: "same-site",
+			expected:     true,
+		},
+		{
+			name:         "cross-site Sec-Fetch-Site even with valid origin",
+			origin:       "https://app.example.com",
+			secFetchSite: "cross-site",
+			expected:     false,
+		},
+		{
+			name:         "wrong origin",
+			origin:       "https://attacker.com",
+			secFetchSite: "cross-site",
+			expected:     false,
+		},
+		{
+			name:         "missing origin signal",
+			origin:       "",
+			secFetchSite: "none",
+			expected:     false,
+		},
 	}
 
-	mismatch := httptest.NewRequest(http.MethodPost, "/protected", nil)
-	mismatch.Header.Set("X-CSRF-Token", "header-token")
-	mismatch.AddCookie(&http.Cookie{Name: "csrf_token", Value: "cookie-token"})
-	if validateCSRF(mismatch, allowedOrigins) {
-		t.Fatal("expected mismatched double-submit tokens to be rejected")
-	}
-
-	valid := httptest.NewRequest(http.MethodPost, "/protected", nil)
-	valid.Header.Set("X-CSRF-Token", "token")
-	valid.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
-	if !validateCSRF(valid, allowedOrigins) {
-		t.Fatal("expected matching double-submit tokens to be accepted")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/ws/ticket", nil)
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			if tc.secFetchSite != "" {
+				req.Header.Set("Sec-Fetch-Site", tc.secFetchSite)
+			}
+			result := validateCSRF(req, allowedOrigins)
+			if result != tc.expected {
+				t.Fatalf("expected %v, got %v", tc.expected, result)
+			}
+		})
 	}
 }
 
@@ -120,5 +155,69 @@ func TestSessionMiddleware_BearerAuth(t *testing.T) {
 
 	if unauthRec.Code != http.StatusUnauthorized {
 		t.Errorf("expected status 401, got %d", unauthRec.Code)
+	}
+}
+
+func TestBootstrapSessionMiddleware_ClearsCookieOnInvalidSession(t *testing.T) {
+	repo := &testSessionRepo{sessions: make(map[string]*session.Session)}
+	uc := sessionUC.NewUsecase(repo, &testAuditRepo{}, &testTxManager{}, nil, 1*time.Hour)
+
+	var cookieCleared bool
+	clearFn := func(w http.ResponseWriter, r *http.Request) {
+		cookieCleared = true
+	}
+
+	mw := BootstrapSessionMiddleware(uc, []string{"http://localhost:3000"}, clearFn)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ws/ticket", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.AddCookie(&http.Cookie{Name: "__Host-session_token", Value: "stale-invalid-token"})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", rec.Code)
+	}
+	if !cookieCleared {
+		t.Errorf("expected onInvalidCookie callback to be invoked")
+	}
+}
+
+func TestNativeBearerSessionMiddleware_RejectsCookies(t *testing.T) {
+	repo := &testSessionRepo{sessions: make(map[string]*session.Session)}
+	uc := sessionUC.NewUsecase(repo, &testAuditRepo{}, &testTxManager{}, nil, 1*time.Hour)
+
+	userID := uuid.New()
+	identID := uuid.New()
+	token, _, err := uc.CreateSession(context.Background(), userID, identID, nil, "127.0.0.1", "test", "req-1")
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	mw := NativeBearerSessionMiddleware(uc)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	cookieReq := httptest.NewRequest(http.MethodGet, "/api/v1/clients", nil)
+	cookieReq.AddCookie(&http.Cookie{Name: "__Host-session_token", Value: token})
+	cookieRec := httptest.NewRecorder()
+	handler.ServeHTTP(cookieRec, cookieReq)
+
+	if cookieRec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 on cookie authentication for native endpoint, got %d", cookieRec.Code)
+	}
+
+	bearerReq := httptest.NewRequest(http.MethodGet, "/api/v1/clients", nil)
+	bearerReq.Header.Set("Authorization", "Bearer "+token)
+	bearerRec := httptest.NewRecorder()
+	handler.ServeHTTP(bearerRec, bearerReq)
+
+	if bearerRec.Code != http.StatusOK {
+		t.Errorf("expected 200 on Bearer token, got %d", bearerRec.Code)
 	}
 }

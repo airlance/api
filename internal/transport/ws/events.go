@@ -9,7 +9,6 @@ import (
 	domainEB "airlance.org/api/internal/domain/eventbus"
 )
 
-// StartEventBusListeners registers subscriptions for session, device, and user revocation topics.
 func (s *Server) StartEventBusListeners(ctx context.Context) error {
 	if s.eventBus == nil {
 		return nil

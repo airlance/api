@@ -69,16 +69,14 @@ func (m *mockSessionRepo) Revoke(ctx context.Context, tokenHash []byte) error {
 	if !ok {
 		return session.ErrNotFound
 	}
-	now := time.Now()
-	s.RevokedAt = &now
+	s.RevokedAt = new(time.Now())
 	return nil
 }
 
 func (m *mockSessionRepo) RevokeByID(ctx context.Context, id uuid.UUID) error {
 	for _, s := range m.sessions {
 		if s.ID == id {
-			now := time.Now()
-			s.RevokedAt = &now
+			s.RevokedAt = new(time.Now())
 			return nil
 		}
 	}

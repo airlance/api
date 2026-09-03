@@ -10,6 +10,7 @@ import (
 
 	"airlance.org/api/internal/config"
 	"airlance.org/api/internal/domain/ratelimit"
+	"airlance.org/api/internal/infrastructure/logger"
 	"airlance.org/api/internal/middleware"
 	"airlance.org/api/internal/usecase/auth"
 	sessionUC "airlance.org/api/internal/usecase/session"
@@ -70,6 +71,10 @@ func (h *AuthHandlers) PasskeySignupVerify(w http.ResponseWriter, r *http.Reques
 		appVer = &v
 	}
 
+	if !h.validateBrowserOrigin(w, r) {
+		return
+	}
+
 	res, err := h.authUC.FinishSignup(r.Context(), challengeID, payload, rawDeviceID, platform, appVer, ip, ua, reqID)
 	if err != nil {
 		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
@@ -81,7 +86,83 @@ func (h *AuthHandlers) PasskeySignupVerify(w http.ResponseWriter, r *http.Reques
 	}
 
 	h.applySessionCookie(w, r, res.Token)
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, WebAuthSuccessResponse{
+		User: WebAuthUserResponse{
+			ID: res.User.ID,
+		},
+		IsNewUser: res.IsNewUser,
+	})
+}
+
+func (h *AuthHandlers) NativePasskeySignupOptions(w http.ResponseWriter, r *http.Request) {
+	if !h.validateNativeContext(w, r, "options") {
+		return
+	}
+
+	ip := middleware.GetClientIP(r.Context())
+	opts, err := h.authUC.BeginSignup(r.Context(), ip)
+	if err != nil {
+		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
+			return
+		}
+		writeOperationError(w, r, http.StatusInternalServerError, "INTERNAL", "Unable to start signup", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, opts)
+}
+
+func (h *AuthHandlers) NativePasskeySignupVerify(w http.ResponseWriter, r *http.Request) {
+	challengeIDStr := r.URL.Query().Get("challenge_id")
+	if challengeIDStr == "" {
+		challengeIDStr = r.Header.Get("X-Challenge-ID")
+	}
+	challengeID, err := uuid.Parse(challengeIDStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "Valid challenge_id required")
+		return
+	}
+
+	if !h.validateNativeContext(w, r, challengeID.String()) {
+		return
+	}
+
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to read request body")
+		return
+	}
+
+	ip := middleware.GetClientIP(r.Context())
+	ua := r.UserAgent()
+	reqID := r.Header.Get("X-Request-ID")
+	rawDeviceID := r.Header.Get("X-Device-ID")
+	platform := r.Header.Get("X-Platform")
+	if platform == "" {
+		platform = "native"
+	}
+	var appVer *string
+	if v := r.Header.Get("X-App-Version"); v != "" {
+		appVer = &v
+	}
+
+	res, err := h.authUC.FinishSignup(r.Context(), challengeID, payload, rawDeviceID, platform, appVer, ip, ua, reqID)
+	if err != nil {
+		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
+			return
+		}
+		writeOperationError(w, r, http.StatusUnauthorized, "AUTH_FAILED", "Signup verification failed", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, NativeAuthSuccessResponse{
+		Token: res.Token,
+		User: WebAuthUserResponse{
+			ID: res.User.ID,
+		},
+		IsNewUser: res.IsNewUser,
+	})
 }
 
 func (h *AuthHandlers) PasskeyLoginOptions(w http.ResponseWriter, r *http.Request) {
@@ -125,6 +206,10 @@ func (h *AuthHandlers) PasskeyLoginVerify(w http.ResponseWriter, r *http.Request
 		appVer = &v
 	}
 
+	if !h.validateBrowserOrigin(w, r) {
+		return
+	}
+
 	res, err := h.authUC.FinishLogin(r.Context(), challengeID, payload, rawDeviceID, platform, appVer, ip, ua, reqID)
 	if err != nil {
 		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
@@ -136,7 +221,130 @@ func (h *AuthHandlers) PasskeyLoginVerify(w http.ResponseWriter, r *http.Request
 	}
 
 	h.applySessionCookie(w, r, res.Token)
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, WebAuthSuccessResponse{
+		User: WebAuthUserResponse{
+			ID: res.User.ID,
+		},
+		IsNewUser: res.IsNewUser,
+	})
+}
+
+func (h *AuthHandlers) NativePasskeyLoginOptions(w http.ResponseWriter, r *http.Request) {
+	if !h.validateNativeContext(w, r, "options") {
+		return
+	}
+
+	ip := middleware.GetClientIP(r.Context())
+	opts, err := h.authUC.BeginLogin(r.Context(), ip)
+	if err != nil {
+		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
+			return
+		}
+		writeOperationError(w, r, http.StatusInternalServerError, "INTERNAL", "Unable to start login", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, opts)
+}
+
+func (h *AuthHandlers) NativePasskeyLoginVerify(w http.ResponseWriter, r *http.Request) {
+	challengeIDStr := r.URL.Query().Get("challenge_id")
+	if challengeIDStr == "" {
+		challengeIDStr = r.Header.Get("X-Challenge-ID")
+	}
+	challengeID, err := uuid.Parse(challengeIDStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "Valid challenge_id required")
+		return
+	}
+
+	if !h.validateNativeContext(w, r, challengeID.String()) {
+		return
+	}
+
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to read request body")
+		return
+	}
+
+	ip := middleware.GetClientIP(r.Context())
+	ua := r.UserAgent()
+	reqID := r.Header.Get("X-Request-ID")
+	rawDeviceID := r.Header.Get("X-Device-ID")
+	platform := r.Header.Get("X-Platform")
+	if platform == "" {
+		platform = "native"
+	}
+	var appVer *string
+	if v := r.Header.Get("X-App-Version"); v != "" {
+		appVer = &v
+	}
+
+	res, err := h.authUC.FinishLogin(r.Context(), challengeID, payload, rawDeviceID, platform, appVer, ip, ua, reqID)
+	if err != nil {
+		if errors.Is(err, ratelimit.ErrRateLimitExceeded) {
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests. Please try again later.")
+			return
+		}
+		writeOperationError(w, r, http.StatusUnauthorized, "AUTH_FAILED", "Login verification failed", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, NativeAuthSuccessResponse{
+		Token: res.Token,
+		User: WebAuthUserResponse{
+			ID: res.User.ID,
+		},
+		IsNewUser: res.IsNewUser,
+	})
+}
+
+func (h *AuthHandlers) validateBrowserOrigin(w http.ResponseWriter, r *http.Request) bool {
+	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs == "cross-site" {
+		writeError(w, http.StatusForbidden, "CSRF_FAILED", "Cross-site requests rejected")
+		return false
+	}
+
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		writeError(w, http.StatusForbidden, "CSRF_FAILED", "Origin header required for web authentication")
+		return false
+	}
+
+	if h.cfg != nil && len(h.cfg.WebAuthnRPOrigins) > 0 {
+		allowed := false
+		for _, o := range h.cfg.WebAuthnRPOrigins {
+			if strings.EqualFold(origin, o) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			writeError(w, http.StatusForbidden, "CSRF_FAILED", "Unauthorized Origin")
+			return false
+		}
+	}
+
+	return true
+}
+
+func (h *AuthHandlers) validateNativeContext(w http.ResponseWriter, r *http.Request, challengeID string) bool {
+	if r.Header.Get("Origin") != "" || r.Header.Get("Sec-Fetch-Site") != "" {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "Native endpoints cannot be accessed from a browser context")
+		return false
+	}
+
+	if h.cfg == nil || h.cfg.NativeAppSecretKey == "" || h.cfg.NativeAppID == "" {
+		writeError(w, http.StatusServiceUnavailable, "NATIVE_AUTH_UNAVAILABLE", "Native authentication is unavailable")
+		return false
+	}
+	if err := ValidateNativeAttestation(r, h.cfg.NativeAppSecretKey, h.cfg.NativeAppID, challengeID); err != nil {
+		logger.FromContext(r.Context()).Warn("Native request signature verification failed", "error", err)
+		writeError(w, http.StatusUnauthorized, "ATTESTATION_FAILED", "Native authentication verification failed")
+		return false
+	}
+	return true
 }
 
 func (h *AuthHandlers) PasskeyRegisterOptions(w http.ResponseWriter, r *http.Request) {
@@ -236,9 +444,27 @@ func (h *AuthHandlers) DeletePasskeyCredential(w http.ResponseWriter, r *http.Re
 	})
 }
 
+func (h *AuthHandlers) ListPasskeyCredentials(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == uuid.Nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Active session required")
+		return
+	}
+
+	creds, err := h.authUC.ListCredentials(r.Context(), userID)
+	if err != nil {
+		writeOperationError(w, r, http.StatusInternalServerError, "INTERNAL", "Failed to list credentials", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ToCredentialListResponse(creds))
+}
+
 func (h *AuthHandlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 	var token string
-	if cookie, err := r.Cookie("session_token"); err == nil && cookie.Value != "" {
+	if cookie, err := r.Cookie(HostSessionCookieName); err == nil && cookie.Value != "" {
+		token = cookie.Value
+	} else if cookie, err := r.Cookie(DevSessionCookieName); err == nil && cookie.Value != "" {
 		token = cookie.Value
 	}
 	if token == "" {
@@ -262,14 +488,7 @@ func (h *AuthHandlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session_token",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
-
+	ClearSessionCookie(w, r)
 	writeJSON(w, http.StatusOK, StatusResponse{Status: "revoked"})
 }
 
@@ -289,35 +508,10 @@ func (h *AuthHandlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session_token",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
-
+	ClearSessionCookie(w, r)
 	writeJSON(w, http.StatusOK, StatusResponse{Status: "all_sessions_revoked"})
 }
 
 func (h *AuthHandlers) applySessionCookie(w http.ResponseWriter, r *http.Request, token string) {
-	isTLS := r.TLS != nil
-	if !isTLS && h.cfg != nil && h.cfg.TLSTerminationIngress {
-		if middleware.IsTrustedProxy(r.RemoteAddr, h.cfg.TrustedProxies) {
-			forwardedProto := r.Header.Get("X-Forwarded-Proto")
-			if strings.EqualFold(forwardedProto, "https") {
-				isTLS = true
-			}
-		}
-	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session_token",
-		Value:    token,
-		Path:     "/",
-		MaxAge:   30 * 86400,
-		HttpOnly: true,
-		Secure:   isTLS,
-		SameSite: http.SameSiteLaxMode,
-	})
+	SetSessionCookie(w, r, token, h.cfg.SessionTTL, h.cfg)
 }
